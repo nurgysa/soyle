@@ -1,0 +1,73 @@
+[project]
+name = "whisperflow"
+version = "1.0.0"
+description = "Local Windows push-to-talk dictation with Whisper + LLM polish"
+requires-python = ">=3.12,<3.13"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "nurgisa" }]
+
+dependencies = [
+  "pyside6>=6.8.0",
+  "faster-whisper>=1.1.0",
+  "sounddevice>=0.5.0",
+  "numpy>=2.1.0",
+  "silero-vad>=5.1.0",
+  "keyboard>=0.13.5",
+  "pywin32>=308; sys_platform == 'win32'",
+  "pyperclip>=1.9.0",
+  "keyring>=25.5.0",
+  "httpx>=0.28.0",
+  "pydantic>=2.10.0",
+  "tomli>=2.2.0",
+  "tomli-w>=1.1.0",
+  "structlog>=24.4.0",
+  "platformdirs>=4.3.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3.0",
+  "pytest-qt>=4.4.0",
+  "pytest-asyncio>=0.24.0",
+  "pytest-xdist>=3.6.0",
+  "pytest-mock>=3.14.0",
+  "respx>=0.22.0",
+  "ruff>=0.8.0",
+  "mypy>=1.13.0",
+  "pre-commit>=4.0.0",
+]
+build = [
+  "pyinstaller>=6.11.0",
+]
+
+[project.scripts]
+whisperflow = "whisperflow.app:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/whisperflow"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "A", "C4", "SIM", "RUF"]
+ignore = ["E501"]  # line length handled by formatter
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_return_any = true
+warn_unused_ignores = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = [
+  "gpu: integration tests that require a CUDA-capable GPU",
+]
