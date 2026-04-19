@@ -1,12 +1,16 @@
 """Tests for Config pydantic models."""
 from __future__ import annotations
 
+from pathlib import Path
+from unittest.mock import patch
+
 import pytest
 
 from whisperflow.core.config import (
     AudioConfig,
     BehaviorConfig,
     Config,
+    ConfigStore,
     HotkeyConfig,
     PostProcessConfig,
     UIConfig,
@@ -62,3 +66,68 @@ def test_audio_max_recording_positive() -> None:
 def test_postprocess_timeout_positive() -> None:
     with pytest.raises(ValueError):
         PostProcessConfig(timeout_seconds=0)
+
+
+def test_configstore_loads_valid_toml(tmp_path: Path, config_fixture_dir: Path) -> None:
+    target = tmp_path / "config.toml"
+    target.write_bytes((config_fixture_dir / "valid.toml").read_bytes())
+
+    store = ConfigStore(config_path=target)
+    cfg = store.load()
+
+    assert cfg.hotkey.mode == "toggle"
+    assert cfg.hotkey.combination == "ctrl+alt+space"
+    assert cfg.whisper.device == "cuda"
+    assert cfg.ui.sound_enabled is False
+
+
+def test_configstore_creates_default_when_missing(tmp_path: Path) -> None:
+    target = tmp_path / "config.toml"
+    store = ConfigStore(config_path=target)
+
+    cfg = store.load()
+
+    assert target.exists()
+    assert cfg.version == 1
+    assert cfg.hotkey.combination == "right alt"
+
+
+def test_configstore_recovers_from_broken(tmp_path: Path, config_fixture_dir: Path) -> None:
+    target = tmp_path / "config.toml"
+    target.write_bytes((config_fixture_dir / "broken.toml").read_bytes())
+
+    store = ConfigStore(config_path=target)
+    cfg = store.load()
+
+    assert cfg.version == 1  # defaults
+    # broken file backed up
+    backups = list(tmp_path.glob("config.toml.broken-*"))
+    assert len(backups) == 1
+
+
+def test_configstore_save_roundtrip(tmp_path: Path) -> None:
+    target = tmp_path / "config.toml"
+    store = ConfigStore(config_path=target)
+
+    cfg = store.load()
+    cfg.hotkey.combination = "f12"
+    cfg.whisper.beam_size = 7
+    store.save(cfg)
+
+    reloaded = ConfigStore(config_path=target).load()
+    assert reloaded.hotkey.combination == "f12"
+    assert reloaded.whisper.beam_size == 7
+
+
+def test_configstore_rejects_unknown_field(tmp_path: Path) -> None:
+    target = tmp_path / "config.toml"
+    target.write_text(
+        "version = 1\n[hotkey]\nweird_field = 42\ncombination = 'right alt'\n",
+        encoding="utf-8",
+    )
+    store = ConfigStore(config_path=target)
+    cfg = store.load()
+    # extra=forbid causes validation error → fallback to defaults + backup
+    assert cfg.hotkey.combination == "right alt"
+    backups = list(tmp_path.glob("config.toml.broken-*"))
+    assert len(backups) == 1

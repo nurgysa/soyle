@@ -1,0 +1,41 @@
+version = 1
+
+[hotkey]
+combination = "ctrl+alt+space"
+mode = "toggle"
+debounce_ms = 200
+
+[audio]
+device = "Microphone (Realtek)"
+sample_rate = 16000
+vad_enabled = true
+vad_min_speech_ms = 400
+max_recording_seconds = 60
+
+[whisper]
+model = "large-v3-turbo"
+device = "cuda"
+compute_type = "int8"
+beam_size = 5
+language = "ru"
+
+[postprocess]
+enabled = true
+provider = "openrouter"
+model = "google/gemini-2.5-flash-lite"
+timeout_seconds = 4.0
+retries = 2
+temperature = 0.0
+prompt_file = "polish_v1.md"
+
+[ui]
+indicator_position = "cursor"
+indicator_follow_mouse = true
+theme = "dark"
+sound_enabled = false
+
+[behavior]
+autostart = true
+check_updates = true
+log_transcriptions = false
+inject_method = "clipboard"
