@@ -126,8 +126,8 @@ class Transcriber:
         try:
             segments_iter, info = self._model.transcribe(
                 audio,
-                beam_size=5,
-                vad_filter=True,
+                beam_size=1,
+                vad_filter=False,
                 language=None,
             )
             segments = [
