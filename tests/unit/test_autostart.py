@@ -1,0 +1,38 @@
+"""Tests for HKCU\\...\\Run autostart management."""
+from __future__ import annotations
+
+import sys
+
+import pytest
+
+if sys.platform != "win32":
+    pytest.skip("Windows-only", allow_module_level=True)
+
+from whisperflow.platform.autostart import (
+    disable_autostart,
+    enable_autostart,
+    is_autostart_enabled,
+)
+
+APP_KEY = "WhisperFlowTest"
+
+
+@pytest.fixture(autouse=True)
+def _cleanup() -> None:
+    yield
+    disable_autostart(app_name=APP_KEY)
+
+
+def test_enable_autostart_roundtrip(tmp_path) -> None:
+    exe = tmp_path / "fake_whisperflow.exe"
+    exe.write_text("")
+    enable_autostart(exe_path=str(exe), app_name=APP_KEY)
+    assert is_autostart_enabled(app_name=APP_KEY) is True
+    disable_autostart(app_name=APP_KEY)
+    assert is_autostart_enabled(app_name=APP_KEY) is False
+
+
+def test_disable_autostart_idempotent() -> None:
+    disable_autostart(app_name=APP_KEY)
+    disable_autostart(app_name=APP_KEY)
+    assert is_autostart_enabled(app_name=APP_KEY) is False
