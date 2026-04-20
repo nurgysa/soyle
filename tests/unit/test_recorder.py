@@ -1,9 +1,14 @@
 """Tests for Recorder's pure VAD-trim function."""
 from __future__ import annotations
 
-import numpy as np
+from unittest.mock import MagicMock
 
-from whisperflow.core.recorder import compute_rms, trim_silence_endpoints
+import numpy as np
+import pytest
+
+from whisperflow.core.bus import Event, EventBus
+from whisperflow.core.errors import AudioDeviceError
+from whisperflow.core.recorder import Recorder, compute_rms, trim_silence_endpoints
 
 
 def test_compute_rms_of_silence_is_zero() -> None:
@@ -44,3 +49,67 @@ def test_trim_silence_preserves_short_clip() -> None:
     speech = (np.random.default_rng(42).standard_normal(sr // 2) * 0.3).astype(np.float32)
     trimmed = trim_silence_endpoints(speech, sample_rate=sr, threshold_rms=0.05)
     assert len(trimmed) >= sr * 0.4  # lost at most ~20%
+
+
+def _make_mock_sd(mocker, chunks: list[np.ndarray]):
+    """Replace sounddevice.InputStream with one that yields given chunks via callback."""
+    mock_sd = mocker.patch("whisperflow.core.recorder.sd")
+    state = {"stream": None, "callback": None}
+
+    def fake_input_stream(**kwargs):
+        stream = MagicMock()
+        state["callback"] = kwargs["callback"]
+
+        def start() -> None:
+            for chunk in chunks:
+                # sounddevice passes (indata, frames, time_info, status)
+                state["callback"](chunk.reshape(-1, 1), len(chunk), None, None)
+
+        stream.start = MagicMock(side_effect=start)
+        stream.stop = MagicMock()
+        stream.close = MagicMock()
+        state["stream"] = stream
+        return stream
+
+    mock_sd.InputStream = fake_input_stream
+    mock_sd.query_devices.return_value = [{"name": "default", "max_input_channels": 1}]
+    return mock_sd
+
+
+def test_recorder_captures_audio(qtbot, mocker) -> None:
+    rng = np.random.default_rng(0)
+    chunks = [rng.standard_normal(1600).astype(np.float32) for _ in range(3)]
+    _make_mock_sd(mocker, chunks)
+
+    bus = EventBus()
+    rec = Recorder(bus=bus)
+    rec.start(sample_rate=16000)
+    result = rec.stop()
+
+    assert result.audio.shape[0] == 4800  # 3 x 1600
+    assert result.duration_ms == pytest.approx(300, abs=10)
+
+
+def test_recorder_emits_started_and_stopped(qtbot, mocker) -> None:
+    _make_mock_sd(mocker, [np.zeros(1600, dtype=np.float32)])
+
+    bus = EventBus()
+    events: list[str] = []
+    bus.subscribe(Event.RECORDING_STARTED, lambda _: events.append("start"))
+    bus.subscribe(Event.RECORDING_STOPPED, lambda _: events.append("stop"))
+
+    rec = Recorder(bus=bus)
+    rec.start()
+    rec.stop()
+
+    assert events == ["start", "stop"]
+
+
+def test_recorder_raises_when_no_input_device(mocker) -> None:
+    mock_sd = mocker.patch("whisperflow.core.recorder.sd")
+    mock_sd.query_devices.return_value = [{"name": "Speakers", "max_input_channels": 0}]
+
+    bus = EventBus()
+    rec = Recorder(bus=bus)
+    with pytest.raises(AudioDeviceError):
+        rec.start()

@@ -5,7 +5,15 @@ this module provides the pure helpers first to enable TDD.
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
+from queue import Queue
+from typing import Any
+
 import numpy as np
+import sounddevice as sd
+
+from whisperflow.core.bus import Event, EventBus
+from whisperflow.core.errors import AudioDeviceError
 
 
 def compute_rms(audio: np.ndarray) -> float:
@@ -51,3 +59,79 @@ def trim_silence_endpoints(
     start = max(0, first * frame_samples - pad_samples)
     end = min(len(audio), last * frame_samples + pad_samples)
     return audio[start:end]
+
+
+@dataclass
+class RecordingResult:
+    audio: np.ndarray
+    duration_ms: int
+    rms_peak: float
+
+
+class Recorder:
+    """Captures microphone audio into a queue; emits events through EventBus."""
+
+    def __init__(self, bus: EventBus) -> None:
+        self._bus = bus
+        self._queue: Queue[np.ndarray] = Queue()
+        self._stream: Any = None
+        self._sample_rate: int = 16000
+
+    def start(self, sample_rate: int = 16000, device: str = "default") -> None:
+        self._ensure_input_device_exists()
+        self._sample_rate = sample_rate
+        self._queue = Queue()
+
+        def _callback(indata: np.ndarray, frames: int, time_info: Any, status: Any) -> None:
+            mono = indata[:, 0].copy() if indata.ndim > 1 else indata.copy()
+            self._queue.put(mono)
+
+        self._stream = sd.InputStream(
+            samplerate=sample_rate,
+            channels=1,
+            dtype="float32",
+            callback=_callback,
+            device=None if device == "default" else device,
+        )
+        self._stream.start()
+        self._bus.emit(Event.RECORDING_STARTED, {"sample_rate": sample_rate})
+
+    def stop(self) -> RecordingResult:
+        if self._stream is None:
+            return RecordingResult(audio=np.zeros(0, np.float32), duration_ms=0, rms_peak=0.0)
+
+        self._stream.stop()
+        self._stream.close()
+        self._stream = None
+
+        chunks: list[np.ndarray] = []
+        while not self._queue.empty():
+            chunks.append(self._queue.get_nowait())
+
+        audio = (
+            np.concatenate(chunks).astype(np.float32)
+            if chunks
+            else np.zeros(0, dtype=np.float32)
+        )
+        duration_ms = int(len(audio) * 1000 / self._sample_rate)
+        rms_peak = compute_rms(audio)
+
+        result = RecordingResult(audio=audio, duration_ms=duration_ms, rms_peak=rms_peak)
+        self._bus.emit(
+            Event.RECORDING_STOPPED,
+            {"audio": audio, "duration_ms": duration_ms, "rms_peak": rms_peak},
+        )
+        return result
+
+    @staticmethod
+    def _ensure_input_device_exists() -> None:
+        try:
+            devices = sd.query_devices()
+        except Exception as exc:
+            raise AudioDeviceError(f"could not enumerate audio devices: {exc}") from exc
+
+        has_input = any(
+            (d.get("max_input_channels", 0) > 0) for d in devices  # type: ignore[union-attr]
+        )
+        if not has_input:
+            raise AudioDeviceError("no microphone device found")
