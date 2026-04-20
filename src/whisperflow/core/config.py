@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
+import keyring
 import tomli
 import tomli_w
 from platformdirs import user_config_path
@@ -142,3 +143,20 @@ class ConfigStore:
         data = config.model_dump(mode="json", exclude_none=True)
         with self._path.open("wb") as f:
             tomli_w.dump(data, f)
+
+    # --- API key management ---
+
+    KEYRING_SERVICE = APP_NAME
+    KEYRING_USERNAME = "openrouter"
+
+    def get_api_key(self) -> str | None:
+        return keyring.get_password(self.KEYRING_SERVICE, self.KEYRING_USERNAME)
+
+    def set_api_key(self, key: str) -> None:
+        keyring.set_password(self.KEYRING_SERVICE, self.KEYRING_USERNAME, key)
+
+    def clear_api_key(self) -> None:
+        try:
+            keyring.delete_password(self.KEYRING_SERVICE, self.KEYRING_USERNAME)
+        except keyring.errors.PasswordDeleteError:
+            pass
