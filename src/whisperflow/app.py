@@ -81,6 +81,7 @@ class WhisperFlowApp(QObject):
             model=self._cfg.whisper.model,
             device=self._cfg.whisper.device,
             compute_type=self._cfg.whisper.compute_type,
+            language=self._cfg.whisper.language,
         )
         self._postprocess = PostProcess(
             config=self._cfg.postprocess,

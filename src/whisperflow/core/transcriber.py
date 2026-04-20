@@ -6,9 +6,11 @@ Part 2: Transcriber class using faster-whisper (task 4.3).
 from __future__ import annotations
 
 import contextlib
+import logging
 import os
 import re
 import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -16,6 +18,8 @@ import numpy as np
 from faster_whisper import WhisperModel
 
 from whisperflow.core.errors import CudaOOMError, CudaUnavailableError, ModelNotLoadedError
+
+_log = logging.getLogger(__name__)
 
 
 def _register_cuda_dll_dirs() -> None:
@@ -95,11 +99,16 @@ class Transcriber:
     """Singleton-style Whisper wrapper; load once, transcribe many."""
 
     def __init__(
-        self, model: str = "large-v3-turbo", device: str = "auto", compute_type: str = "int8"
+        self,
+        model: str = "large-v3-turbo",
+        device: str = "auto",
+        compute_type: str = "int8",
+        language: str | None = None,
     ) -> None:
         self._model_name = model
         self._device_pref = device
         self._compute_type = compute_type
+        self._language = language
         self._model: WhisperModel | None = None
         self._actual_device: str = "cpu"
 
@@ -123,18 +132,33 @@ class Transcriber:
         self._ensure_loaded()
         assert self._model is not None
 
+        audio_sec = len(audio) / sample_rate
+        _log.info("transcribe_start audio=%.2fs device=%s", audio_sec, self._actual_device)
+        t_start = time.monotonic()
         try:
             segments_iter, info = self._model.transcribe(
                 audio,
                 beam_size=1,
                 vad_filter=False,
-                language=None,
+                language=self._language,
+                condition_on_previous_text=False,
+            )
+            _log.info(
+                "transcribe_decoded_in=%.2fs lang=%s",
+                time.monotonic() - t_start,
+                info.language,
             )
             segments = [
                 {"start": s.start, "end": s.end, "text": s.text}
                 for s in segments_iter
             ]
+            _log.info(
+                "transcribe_end total=%.2fs n_segments=%d",
+                time.monotonic() - t_start,
+                len(segments),
+            )
         except RuntimeError as exc:
+            _log.error("transcribe_error: %s", exc)
             msg = str(exc).lower()
             if "out of memory" in msg or ("cuda" in msg and "memory" in msg):
                 raise CudaOOMError(str(exc)) from exc
