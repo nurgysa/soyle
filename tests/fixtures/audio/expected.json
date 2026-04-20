@@ -1,0 +1,22 @@
+{
+  "short_ru.wav": {
+    "language": "ru",
+    "expected_text": "Привет, как дела",
+    "min_similarity": 0.75
+  },
+  "short_en.wav": {
+    "language": "en",
+    "expected_text": "Hello world how are you",
+    "min_similarity": 0.75
+  },
+  "mixed.wav": {
+    "language": null,
+    "expected_text": "Сегодня я deploy новый feature",
+    "min_similarity": 0.55
+  },
+  "silence.wav": {
+    "language": null,
+    "expected_text": "",
+    "min_similarity": 1.0
+  }
+}
