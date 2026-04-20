@@ -6,13 +6,39 @@ Part 2: Transcriber class using faster-whisper (task 4.3).
 from __future__ import annotations
 
 import contextlib
+import os
 import re
+import sys
 from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
 from faster_whisper import WhisperModel
 
 from whisperflow.core.errors import CudaOOMError, CudaUnavailableError, ModelNotLoadedError
+
+
+def _register_cuda_dll_dirs() -> None:
+    """Add nvidia-cublas-cu12 / nvidia-cudnn-cu12 wheel `bin/` dirs to DLL search path.
+
+    On Windows, CTranslate2 needs `cublas64_12.dll` and `cudnn*.dll` to initialise
+    CUDA models. When those libraries are installed as pip wheels (instead of the
+    full CUDA Toolkit), their DLLs live under `site-packages/nvidia/<lib>/bin/`.
+    `os.add_dll_directory` tells Windows to look there.
+    """
+    if sys.platform != "win32":
+        return
+    for pkg_name in ("nvidia.cublas", "nvidia.cudnn"):
+        try:
+            mod = __import__(pkg_name, fromlist=[""])
+        except ImportError:
+            continue
+        file_attr = getattr(mod, "__file__", None)
+        if file_attr is None:
+            continue
+        bin_dir = Path(file_attr).parent / "bin"
+        if bin_dir.is_dir():
+            os.add_dll_directory(str(bin_dir))
 
 _WHITESPACE_RE = re.compile(r"\s+")
 _NOISE_TAGS_RE = re.compile(r"\[(music|applause|laughter|noise|silence)\]", re.IGNORECASE)
@@ -132,6 +158,7 @@ class Transcriber:
         device = self._device_pref
         try:
             if device in ("auto", "cuda"):
+                _register_cuda_dll_dirs()
                 try:
                     self._model = WhisperModel(
                         self._model_name, device="cuda", compute_type=self._compute_type

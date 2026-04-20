@@ -40,6 +40,10 @@ dev = [
 build = [
   "pyinstaller>=6.11.0",
 ]
+gpu = [
+  "nvidia-cublas-cu12",
+  "nvidia-cudnn-cu12>=9,<10",
+]
 
 [project.scripts]
 whisperflow = "whisperflow.app:main"
