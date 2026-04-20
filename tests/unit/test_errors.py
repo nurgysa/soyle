@@ -1,8 +1,6 @@
 """Tests for domain exception hierarchy."""
 from __future__ import annotations
 
-import pytest
-
 from whisperflow.core.errors import (
     AudioDeviceError,
     ConfigError,

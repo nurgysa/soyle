@@ -1,6 +1,7 @@
 """Configuration models and persistence."""
 from __future__ import annotations
 
+import contextlib
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
@@ -156,7 +157,5 @@ class ConfigStore:
         keyring.set_password(self.KEYRING_SERVICE, self.KEYRING_USERNAME, key)
 
     def clear_api_key(self) -> None:
-        try:
+        with contextlib.suppress(keyring.errors.PasswordDeleteError):
             keyring.delete_password(self.KEYRING_SERVICE, self.KEYRING_USERNAME)
-        except keyring.errors.PasswordDeleteError:
-            pass

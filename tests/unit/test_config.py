@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
@@ -34,7 +33,7 @@ def test_config_defaults() -> None:
 
 
 def test_hotkey_mode_validated() -> None:
-    with pytest.raises(ValueError, match="push_to_talk|toggle"):
+    with pytest.raises(ValueError, match=r"push_to_talk|toggle"):
         HotkeyConfig(mode="invalid")
 
 

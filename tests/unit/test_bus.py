@@ -1,7 +1,6 @@
 """Tests for EventBus (Qt signal-based)."""
 from __future__ import annotations
 
-import pytest
 from PySide6.QtCore import QObject
 
 from whisperflow.core.bus import Event, EventBus
@@ -13,7 +12,7 @@ def test_event_values_are_strings() -> None:
     assert Event.ERROR == "error"
 
 
-def test_subscribe_and_emit(qtbot) -> None:  # noqa: ARG001
+def test_subscribe_and_emit(qtbot) -> None:
     bus = EventBus()
     received: list[dict] = []
 
@@ -23,7 +22,7 @@ def test_subscribe_and_emit(qtbot) -> None:  # noqa: ARG001
     assert received == [{"source": "test"}]
 
 
-def test_unsubscribe(qtbot) -> None:  # noqa: ARG001
+def test_unsubscribe(qtbot) -> None:
     bus = EventBus()
     received: list[dict] = []
 
@@ -35,7 +34,7 @@ def test_unsubscribe(qtbot) -> None:  # noqa: ARG001
     assert received == []
 
 
-def test_multiple_subscribers_all_called(qtbot) -> None:  # noqa: ARG001
+def test_multiple_subscribers_all_called(qtbot) -> None:
     bus = EventBus()
     calls: list[str] = []
 
@@ -46,7 +45,7 @@ def test_multiple_subscribers_all_called(qtbot) -> None:  # noqa: ARG001
     assert set(calls) == {"a", "b"}
 
 
-def test_unrelated_events_not_delivered(qtbot) -> None:  # noqa: ARG001
+def test_unrelated_events_not_delivered(qtbot) -> None:
     bus = EventBus()
     received: list[str] = []
 
