@@ -36,7 +36,20 @@ class WhisperConfig(BaseModel):
 
     model: str = "large-v3-turbo"
     device: Literal["auto", "cuda", "cpu"] = "auto"
-    compute_type: Literal["int8", "float16", "float32"] = "int8"
+    # CTranslate2-supported compute types; see
+    # https://opennmt.net/CTranslate2/quantization.html
+    compute_type: Literal[
+        "default",
+        "auto",
+        "int8",
+        "int8_float32",
+        "int8_float16",
+        "int8_bfloat16",
+        "int16",
+        "float16",
+        "bfloat16",
+        "float32",
+    ] = "int8"
     beam_size: int = Field(default=5, ge=1, le=10)
     language: str | None = None
 
