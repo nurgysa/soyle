@@ -184,14 +184,19 @@ class WhisperFlowApp(QObject):
     # ---- Inference callbacks (always invoked from worker thread) ----
 
     def _on_inference_done(self, text: str, fallback: bool, language: str) -> None:
+        log.info(f"on_inference_done chars={len(text)} fallback={fallback}")
         QTimer.singleShot(0, partial(self._finish_inference, text, fallback, language))
 
     def _on_inference_error(self, exc: Exception) -> None:
-        log.error("inference_failed", error=str(exc))
+        log.error(f"inference_failed error={exc}")
         QTimer.singleShot(0, lambda: self._indicator.flash_error("Ошибка распознавания"))
         QTimer.singleShot(0, self._state.reset_to_idle)
 
     def _finish_inference(self, text: str, fallback: bool, _language: str) -> None:
+        log.info(
+            f"finish_inference chars={len(text)} fallback={fallback} "
+            f"state={self._state.current}"
+        )
         if not text.strip():
             self._indicator.flash_error("Ничего не распознано")
             self._state.reset_to_idle()
