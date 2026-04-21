@@ -11,6 +11,7 @@ from PySide6.QtWidgets import QApplication
 
 from whisperflow.core.bus import Event, EventBus
 from whisperflow.core.config import ConfigStore, default_config_path
+from whisperflow.core.dictionary import DictionaryStore
 from whisperflow.core.errors import AudioDeviceError
 from whisperflow.core.hotkey import HotkeyBox
 from whisperflow.core.injector import Injector
@@ -73,6 +74,7 @@ class WhisperFlowApp(QObject):
         self._bus = EventBus()
         self._state = StateMachine()
         self._store = ConfigStore()
+        self._dict_store = DictionaryStore()
         self._cfg = self._store.load()
 
         self._indicator = Indicator()
@@ -86,11 +88,13 @@ class WhisperFlowApp(QObject):
             device=self._cfg.whisper.device,
             compute_type=self._cfg.whisper.compute_type,
             language=self._cfg.whisper.language,
+            initial_prompt=self._dict_store.as_whisper_prompt(),
         )
         self._postprocess = PostProcess(
             config=self._cfg.postprocess,
             api_key=self._store.get_api_key(),
             prompt_path=prompt_path(self._cfg.postprocess.prompt_file),
+            dictionary_hint=self._dict_store.as_llm_instruction(),
         )
         self._hotkey = HotkeyBox(
             bus=self._bus,
@@ -230,7 +234,9 @@ class WhisperFlowApp(QObject):
 
     def _show_settings(self) -> None:
         if self._settings_window is None:
-            self._settings_window = SettingsWindow(self._store)
+            self._settings_window = SettingsWindow(
+                self._store, dictionary_store=self._dict_store
+            )
             self._settings_window.settings_saved.connect(self._reload_config)
         self._settings_window.show()
         self._settings_window.raise_()
@@ -239,10 +245,13 @@ class WhisperFlowApp(QObject):
     def _reload_config(self) -> None:
         self._cfg = self._store.load()
         self._hotkey.rebind(self._cfg.hotkey.combination)
+        # Refresh dictionary-dependent pieces in place (no re-construction needed).
+        self._transcriber.set_initial_prompt(self._dict_store.as_whisper_prompt())
         self._postprocess = PostProcess(
             config=self._cfg.postprocess,
             api_key=self._store.get_api_key(),
             prompt_path=prompt_path(self._cfg.postprocess.prompt_file),
+            dictionary_hint=self._dict_store.as_llm_instruction(),
         )
         self._sync_autostart()
         self._apply_theme()

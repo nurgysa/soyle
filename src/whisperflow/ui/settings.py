@@ -1,4 +1,4 @@
-"""Settings window with tabs: Hotkey, Audio, Whisper, PostProcess, UI, About."""
+"""Settings window with tabs: Hotkey, Audio, Whisper, PostProcess, UI, Dictionary, About."""
 from __future__ import annotations
 
 from PySide6.QtCore import Signal
@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QListWidget,
     QMainWindow,
     QPushButton,
     QSpinBox,
@@ -19,6 +20,7 @@ from PySide6.QtWidgets import (
 )
 
 from whisperflow.core.config import Config, ConfigStore
+from whisperflow.core.dictionary import DictionaryStore
 
 
 class SettingsWindow(QMainWindow):
@@ -26,9 +28,14 @@ class SettingsWindow(QMainWindow):
 
     settings_saved = Signal()
 
-    def __init__(self, store: ConfigStore) -> None:
+    def __init__(
+        self,
+        store: ConfigStore,
+        dictionary_store: DictionaryStore | None = None,
+    ) -> None:
         super().__init__()
         self._store = store
+        self._dict_store = dictionary_store or DictionaryStore()
         self._cfg: Config = store.load()
 
         self.setWindowTitle("WhisperFlow — настройки")
@@ -42,6 +49,7 @@ class SettingsWindow(QMainWindow):
         self._tabs.addTab(self._build_audio_tab(), "Аудио")
         self._tabs.addTab(self._build_whisper_tab(), "Whisper")
         self._tabs.addTab(self._build_postprocess_tab(), "LLM")
+        self._tabs.addTab(self._build_dictionary_tab(), "Словарь")
         self._tabs.addTab(self._build_ui_tab(), "Внешний вид")
         self._tabs.addTab(self._build_about_tab(), "О программе")  # noqa: RUF001
         root.addWidget(self._tabs)
@@ -139,6 +147,63 @@ class SettingsWindow(QMainWindow):
         self._beh_autostart.setChecked(self._cfg.behavior.autostart)
         layout.addRow(self._beh_autostart)
         return w
+
+    def _build_dictionary_tab(self) -> QWidget:
+        w = QWidget()
+        layout = QVBoxLayout(w)
+        layout.addWidget(
+            QLabel(
+                "Термины из словаря подсказываются Whisper при распознавании "
+                "и LLM при полировке (имена, бренды, техническая лексика)."
+            )
+        )
+
+        self._dict_list = QListWidget()
+        self._dict_list.addItems(self._dict_store.load())
+        layout.addWidget(self._dict_list, 1)
+
+        entry_row = QHBoxLayout()
+        self._dict_input = QLineEdit()
+        self._dict_input.setPlaceholderText("WhisperFlow, OpenRouter, Nurgisa ...")
+        entry_row.addWidget(self._dict_input, 1)
+        btn_add = QPushButton("Добавить")
+        btn_add.clicked.connect(self._dict_add_clicked)
+        entry_row.addWidget(btn_add)
+        self._dict_input.returnPressed.connect(self._dict_add_clicked)
+        layout.addLayout(entry_row)
+
+        button_row = QHBoxLayout()
+        btn_remove = QPushButton("Удалить выбранные")
+        btn_remove.clicked.connect(self._dict_remove_selected)
+        button_row.addWidget(btn_remove)
+        btn_clear = QPushButton("Очистить всё")
+        btn_clear.clicked.connect(self._dict_clear_clicked)
+        button_row.addWidget(btn_clear)
+        button_row.addStretch()
+        layout.addLayout(button_row)
+        return w
+
+    def _dict_add_clicked(self) -> None:
+        term = self._dict_input.text().strip()
+        if not term:
+            return
+        self._dict_store.add(term)
+        self._refresh_dict_list()
+        self._dict_input.clear()
+
+    def _dict_remove_selected(self) -> None:
+        items = self._dict_list.selectedItems()
+        for item in items:
+            self._dict_store.remove(item.text())
+        self._refresh_dict_list()
+
+    def _dict_clear_clicked(self) -> None:
+        self._dict_store.clear()
+        self._refresh_dict_list()
+
+    def _refresh_dict_list(self) -> None:
+        self._dict_list.clear()
+        self._dict_list.addItems(self._dict_store.load())
 
     def _build_about_tab(self) -> QWidget:
         from whisperflow import __version__

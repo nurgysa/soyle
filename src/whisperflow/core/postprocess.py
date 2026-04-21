@@ -51,12 +51,24 @@ class PostProcess:
         config: PostProcessConfig,
         api_key: str | None,
         prompt_path: Path,
+        dictionary_hint: str = "",
     ) -> None:
         self._config = config
         self._api_key = api_key
-        self._system_prompt = (
+        self._base_prompt = (
             prompt_path.read_text(encoding="utf-8") if prompt_path.exists() else ""
         )
+        self._dictionary_hint = dictionary_hint
+
+    def set_dictionary_hint(self, hint: str) -> None:
+        """Update the per-user glossary clause appended to the system prompt."""
+        self._dictionary_hint = hint
+
+    @property
+    def _system_prompt(self) -> str:
+        if not self._dictionary_hint:
+            return self._base_prompt
+        return f"{self._base_prompt}\n\nADDITIONAL GLOSSARY:\n{self._dictionary_hint}"
 
     async def polish(self, raw_text: str, language: str) -> PolishResult:
         if not self._api_key or not raw_text.strip():

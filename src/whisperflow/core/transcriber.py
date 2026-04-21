@@ -104,13 +104,19 @@ class Transcriber:
         device: str = "auto",
         compute_type: str = "int8",
         language: str | None = None,
+        initial_prompt: str = "",
     ) -> None:
         self._model_name = model
         self._device_pref = device
         self._compute_type = compute_type
         self._language = language
+        self._initial_prompt = initial_prompt
         self._model: WhisperModel | None = None
         self._actual_device: str = "cpu"
+
+    def set_initial_prompt(self, prompt: str) -> None:
+        """Update the glossary hint used on the next transcribe call."""
+        self._initial_prompt = prompt
 
     @property
     def device(self) -> str:
@@ -142,6 +148,7 @@ class Transcriber:
                 vad_filter=False,
                 language=self._language,
                 condition_on_previous_text=False,
+                initial_prompt=self._initial_prompt or None,
             )
             _log.info(
                 "transcribe_decoded_in=%.2fs lang=%s",
