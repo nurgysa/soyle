@@ -65,7 +65,7 @@ def test_inject_falls_back_to_ctrl_v_without_edit_child(qtbot, mocker) -> None:
     assert clipboard_state["value"] == "previous"
 
 
-def test_inject_does_not_paste_if_window_changed(qtbot, mocker) -> None:  # noqa: ARG001
+def test_inject_does_not_paste_if_window_changed(qtbot, mocker) -> None:
     mocker.patch("whisperflow.core.injector.pyperclip.copy")
     mocker.patch("whisperflow.core.injector.pyperclip.paste", return_value="")
     mock_sendv = mocker.patch("whisperflow.core.injector.send_ctrl_v")
@@ -87,7 +87,7 @@ def test_inject_does_not_paste_if_window_changed(qtbot, mocker) -> None:  # noqa
     mock_wm.assert_not_called()
 
 
-def test_inject_emits_events(qtbot, mocker) -> None:  # noqa: ARG001
+def test_inject_emits_events(qtbot, mocker) -> None:
     mocker.patch("whisperflow.core.injector.pyperclip.copy")
     mocker.patch("whisperflow.core.injector.pyperclip.paste", return_value="")
     mocker.patch("whisperflow.core.injector.send_ctrl_v")
