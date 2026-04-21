@@ -4,10 +4,9 @@ from __future__ import annotations
 import asyncio
 import subprocess
 import sys
-from functools import partial
 
 import structlog
-from PySide6.QtCore import QObject, QRunnable, QThreadPool, QTimer
+from PySide6.QtCore import QObject, QRunnable, QThreadPool, QTimer, Signal
 from PySide6.QtWidgets import QApplication
 
 from whisperflow.core.bus import Event, EventBus
@@ -62,6 +61,11 @@ class _InferenceJob(QRunnable):
 class WhisperFlowApp(QObject):
     """Orchestrator: holds singletons and wires events."""
 
+    # Cross-thread signals: worker QRunnables cannot reliably use QTimer.singleShot
+    # because they have no Qt event loop. Signals use QueuedConnection automatically.
+    _inference_done = Signal(str, bool, str)  # text, fallback, language
+    _inference_error = Signal(str)  # error message
+
     def __init__(self, qapp: QApplication) -> None:
         super().__init__()
         self._qapp = qapp
@@ -99,6 +103,10 @@ class WhisperFlowApp(QObject):
         self._wire_events()
         self._wire_tray()
         self._apply_theme()
+
+        # Bridge worker-thread inference callbacks → main thread via Qt signals.
+        self._inference_done.connect(self._finish_inference)
+        self._inference_error.connect(self._handle_inference_error)
 
     # ---- Lifecycle ----
 
@@ -185,12 +193,16 @@ class WhisperFlowApp(QObject):
 
     def _on_inference_done(self, text: str, fallback: bool, language: str) -> None:
         log.info(f"on_inference_done chars={len(text)} fallback={fallback}")
-        QTimer.singleShot(0, partial(self._finish_inference, text, fallback, language))
+        # Signal is thread-safe and uses QueuedConnection → handler runs on main thread.
+        self._inference_done.emit(text, fallback, language)
 
     def _on_inference_error(self, exc: Exception) -> None:
         log.error(f"inference_failed error={exc}")
-        QTimer.singleShot(0, lambda: self._indicator.flash_error("Ошибка распознавания"))
-        QTimer.singleShot(0, self._state.reset_to_idle)
+        self._inference_error.emit(str(exc))
+
+    def _handle_inference_error(self, _message: str) -> None:
+        self._indicator.flash_error("Ошибка распознавания")
+        self._state.reset_to_idle()
 
     def _finish_inference(self, text: str, fallback: bool, _language: str) -> None:
         log.info(
