@@ -13,7 +13,6 @@ import sys
 
 if sys.platform == "win32":
     import win32api
-    import win32con
 
 VK_CONTROL = 0x11
 VK_V = 0x56
