@@ -10,7 +10,7 @@ import pyperclip
 from PySide6.QtCore import QTimer
 
 from whisperflow.core.bus import Event, EventBus
-from whisperflow.platform.paste import send_ctrl_v
+from whisperflow.platform.paste import find_edit_child, send_ctrl_v, send_wm_paste
 from whisperflow.platform.window import get_foreground_hwnd, is_same_window
 
 _log = logging.getLogger(__name__)
@@ -56,8 +56,16 @@ class Injector:
         backup = pyperclip.paste()
         pyperclip.copy(text)
         time.sleep(0.02)  # give clipboard manager a moment
-        send_ctrl_v()
-        _log.info("inject send_ctrl_v fired; restore in %dms", self._restore_delay_ms)
+
+        # Prefer WM_PASTE to a child Edit/RichEdit (reliable on Notepad and
+        # other classic Win32 apps). Fall back to synthetic Ctrl+V for
+        # modern apps (browsers, Electron, Qt) that have no such child.
+        edit_hwnd = find_edit_child(target_hwnd)
+        if edit_hwnd and send_wm_paste(target_hwnd):
+            _log.info("inject via WM_PASTE edit=%d; restore in %dms", edit_hwnd, self._restore_delay_ms)
+        else:
+            send_ctrl_v()
+            _log.info("inject via send_ctrl_v; restore in %dms", self._restore_delay_ms)
 
         QTimer.singleShot(self._restore_delay_ms, lambda: pyperclip.copy(backup))
 
