@@ -26,7 +26,7 @@ class InjectResult:
 class Injector:
     """Paste text into the captured HWND; restore clipboard after a short delay."""
 
-    def __init__(self, bus: EventBus, restore_delay_ms: int = 200) -> None:
+    def __init__(self, bus: EventBus, restore_delay_ms: int = 500) -> None:
         self._bus = bus
         self._restore_delay_ms = restore_delay_ms
 

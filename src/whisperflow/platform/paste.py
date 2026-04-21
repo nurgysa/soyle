@@ -1,10 +1,9 @@
-"""Send Ctrl+V to the foreground window.
+"""Send Ctrl+V to the foreground window via the `keyboard` package.
 
-Uses win32api.keybd_event (from pywin32) which is simple and reliable on
-Windows. The earlier ctypes+SendInput implementation silently failed on
-some targets because the Python INPUT union did not include MOUSEINPUT /
-HARDWAREINPUT members, so ctypes.sizeof(INPUT) was smaller than what
-SendInput expects, and Windows rejected the call silently.
+We previously tried ctypes+SendInput (wrong INPUT union size) and
+win32api.keybd_event (still no paste in real Notepad). The `keyboard`
+package wraps the Win32 Raw Input interface and handles the timing,
+layout, and scan-code quirks that defeat the lower-level approaches.
 """
 from __future__ import annotations
 
@@ -12,19 +11,12 @@ import contextlib
 import sys
 
 if sys.platform == "win32":
-    import win32api
-
-VK_CONTROL = 0x11
-VK_V = 0x56
-KEYEVENTF_KEYUP = 0x0002
+    import keyboard
 
 
 def send_ctrl_v() -> None:
-    """Send Ctrl+V as 4 synthetic key events. Errors are suppressed."""
+    """Press Ctrl+V synthetically. Errors are suppressed."""
     if sys.platform != "win32":
         return
     with contextlib.suppress(Exception):
-        win32api.keybd_event(VK_CONTROL, 0, 0, 0)
-        win32api.keybd_event(VK_V, 0, 0, 0)
-        win32api.keybd_event(VK_V, 0, KEYEVENTF_KEYUP, 0)
-        win32api.keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, 0)
+        keyboard.press_and_release("ctrl+v")
