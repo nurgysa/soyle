@@ -6,7 +6,6 @@ Part 2: Transcriber class using faster-whisper (task 4.3).
 from __future__ import annotations
 
 import contextlib
-import logging
 import os
 import re
 import sys
@@ -15,11 +14,12 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
+import structlog
 from faster_whisper import WhisperModel
 
 from whisperflow.core.errors import CudaOOMError, CudaUnavailableError, ModelNotLoadedError
 
-_log = logging.getLogger(__name__)
+_log = structlog.get_logger(__name__)
 
 
 def _register_cuda_dll_dirs() -> None:
@@ -139,7 +139,11 @@ class Transcriber:
         assert self._model is not None
 
         audio_sec = len(audio) / sample_rate
-        _log.info("transcribe_start audio=%.2fs device=%s", audio_sec, self._actual_device)
+        _log.info(
+            "transcribe_start",
+            audio_sec=round(audio_sec, 2),
+            device=self._actual_device,
+        )
         t_start = time.monotonic()
         try:
             segments_iter, info = self._model.transcribe(
@@ -151,21 +155,21 @@ class Transcriber:
                 initial_prompt=self._initial_prompt or None,
             )
             _log.info(
-                "transcribe_decoded_in=%.2fs lang=%s",
-                time.monotonic() - t_start,
-                info.language,
+                "transcribe_decoded",
+                decoded_sec=round(time.monotonic() - t_start, 2),
+                lang=info.language,
             )
             segments = [
                 {"start": s.start, "end": s.end, "text": s.text}
                 for s in segments_iter
             ]
             _log.info(
-                "transcribe_end total=%.2fs n_segments=%d",
-                time.monotonic() - t_start,
-                len(segments),
+                "transcribe_end",
+                total_sec=round(time.monotonic() - t_start, 2),
+                n_segments=len(segments),
             )
         except RuntimeError as exc:
-            _log.error("transcribe_error: %s", exc)
+            _log.error("transcribe_error", error=str(exc))
             msg = str(exc).lower()
             if "out of memory" in msg or ("cuda" in msg and "memory" in msg):
                 raise CudaOOMError(str(exc)) from exc
