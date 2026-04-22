@@ -215,8 +215,11 @@ async def test_mode_rewrite_uses_rewrite_prompt(
 
 # ---- Model presets + pricing ----
 
-def test_popular_models_is_four_google_entries() -> None:
-    assert len(POPULAR_MODELS) == 4
+def test_popular_models_is_curated_google_entries() -> None:
+    # Curated list: Gemini 2.5 Flash Lite + Gemma 4 31B IT (both Google).
+    assert len(POPULAR_MODELS) == 2
+    ids = {p.model_id for p in POPULAR_MODELS}
+    assert ids == {"google/gemini-2.5-flash-lite", "google/gemma-4-31b-it"}
     for preset in POPULAR_MODELS:
         assert isinstance(preset, ModelPreset)
         assert preset.model_id.startswith("google/")
@@ -228,10 +231,10 @@ def test_model_pricing_known_model() -> None:
     assert out_p == 0.40
 
 
-def test_model_pricing_free_tier_is_zero() -> None:
-    in_p, out_p = model_pricing("google/gemma-4-31b:free")
-    assert in_p == 0.0
-    assert out_p == 0.0
+def test_model_pricing_gemma_4_31b_it() -> None:
+    in_p, out_p = model_pricing("google/gemma-4-31b-it")
+    assert in_p == 0.10
+    assert out_p == 0.30
 
 
 def test_model_pricing_unknown_falls_back() -> None:
@@ -251,8 +254,9 @@ def test_display_label_contains_id_label_and_prices() -> None:
 
 
 def test_estimate_cost_uses_selected_model() -> None:
-    # Free tier → zero.
-    assert PostProcess._estimate_cost(100, 100, "google/gemma-4-31b:free") == 0.0
+    # Gemma 4 31B IT: 100/1M * 0.10 + 100/1M * 0.30 = 0.00004
+    gemma_cost = PostProcess._estimate_cost(100, 100, "google/gemma-4-31b-it")
+    assert gemma_cost == pytest.approx(0.00004)
     # Gemini Flash Lite: 100/1M * 0.10 + 100/1M * 0.40 = 0.00005
     cost = PostProcess._estimate_cost(100, 100, "google/gemini-2.5-flash-lite")
     assert cost == pytest.approx(0.00005)

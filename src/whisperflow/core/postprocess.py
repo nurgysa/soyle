@@ -8,8 +8,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import httpx
+import structlog
 
 from whisperflow.core.config import PostProcessConfig
+
+log = structlog.get_logger()
 
 API_URL = "https://openrouter.ai/api/v1/chat/completions"
 
@@ -35,28 +38,16 @@ class ModelPreset:
 
 POPULAR_MODELS: tuple[ModelPreset, ...] = (
     ModelPreset(
-        "google/gemma-4-31b:free",
-        "Gemma 4 31B (free)",
-        price_in_per_m=0.0,
-        price_out_per_m=0.0,
-    ),
-    ModelPreset(
-        "google/gemma-4-31b",
-        "Gemma 4 31B",
-        price_in_per_m=0.10,
-        price_out_per_m=0.30,
-    ),
-    ModelPreset(
-        "google/gemini-2.5-flash-lite-preview-09-2025",
-        "Gemini 2.5 Flash Lite Preview 09-2025",
-        price_in_per_m=0.10,
-        price_out_per_m=0.40,
-    ),
-    ModelPreset(
         "google/gemini-2.5-flash-lite",
         "Gemini 2.5 Flash Lite",
         price_in_per_m=0.10,
         price_out_per_m=0.40,
+    ),
+    ModelPreset(
+        "google/gemma-4-31b-it",
+        "Gemma 4 31B (instruction-tuned)",
+        price_in_per_m=0.10,
+        price_out_per_m=0.30,
     ),
 )
 
@@ -91,6 +82,11 @@ class PolishResult:
     tokens_out: int
     cost_usd: float
     latency_ms: int
+    # Fine-grained outcome tag. "ok" on success; specific code on fallback
+    # ("no_api_key", "empty_input", "http_401", "http_429", "http_5xx",
+    # "timeout", "network_error", "empty_choices", "empty_content",
+    # "refused", "too_long", "api_error").
+    reason: str = "ok"
 
 
 class PostProcess:
@@ -129,6 +125,40 @@ class PostProcess:
         """Update the per-user glossary clause appended to the system prompt."""
         self._dictionary_hint = hint
 
+    def set_mode(self, mode: str) -> None:
+        """Switch between 'polish' and 'rewrite' without rebuilding the object.
+
+        Validated upstream by `PostProcessConfig`'s Literal — callers should
+        only pass "polish" or "rewrite".
+        """
+        if mode not in ("polish", "rewrite"):
+            raise ValueError(f"unknown mode: {mode!r}")
+        self._config.mode = mode  # type: ignore[assignment]
+
+    def reload(
+        self,
+        *,
+        config: PostProcessConfig,
+        api_key: str | None,
+        prompt_path: Path,
+        rewrite_prompt_path: Path | None = None,
+        dictionary_hint: str = "",
+    ) -> None:
+        """Refresh all settings in place. Use from the config-reload path so
+        we don't swap the PostProcess instance (which would invalidate any
+        in-flight references, e.g. an inference job holding the old one).
+        """
+        self._config = config
+        self._api_key = api_key
+        self._polish_prompt = (
+            prompt_path.read_text(encoding="utf-8") if prompt_path.exists() else ""
+        )
+        if rewrite_prompt_path is not None and rewrite_prompt_path.exists():
+            self._rewrite_prompt = rewrite_prompt_path.read_text(encoding="utf-8")
+        else:
+            self._rewrite_prompt = self._polish_prompt
+        self._dictionary_hint = dictionary_hint
+
     @property
     def _base_prompt(self) -> str:
         return self._rewrite_prompt if self._config.mode == "rewrite" else self._polish_prompt
@@ -149,6 +179,9 @@ class PostProcess:
             {"language": language, "text": raw_text}, ensure_ascii=False
         )
 
+        # No `max_tokens`: provider default is sane, and we already have two
+        # safety nets against runaway output — the prompt's ±30%/±50% length
+        # discipline and `_too_long` (3× input chars) as a hallucination guard.
         body: dict[str, object] = {
             "model": self._config.model,
             "messages": [
@@ -156,7 +189,6 @@ class PostProcess:
                 {"role": "user", "content": user_payload},
             ],
             "temperature": self._config.temperature,
-            "max_tokens": min(len(raw_text) * 2, 1024),
         }
 
         headers = {
@@ -167,19 +199,28 @@ class PostProcess:
         }
 
         start = time.monotonic()
-        reply, tokens_in, tokens_out = await self._call_with_retry(body, headers)
+        reply, tokens_in, tokens_out, api_reason = await self._call_with_retry(body, headers)
         latency_ms = int((time.monotonic() - start) * 1000)
 
         if reply is None:
-            return self._fallback(raw_text, reason="api_failed", latency_ms=latency_ms)
+            return self._fallback(raw_text, reason=api_reason, latency_ms=latency_ms)
 
         cleaned = reply.strip()
-        if self._looks_refused(cleaned) or self._too_long(raw_text, cleaned):
-            return self._fallback(
-                raw_text, reason="refused_or_hallucinated", latency_ms=latency_ms
-            )
+        if self._looks_refused(cleaned):
+            return self._fallback(raw_text, reason="refused", latency_ms=latency_ms)
+        if self._too_long(raw_text, cleaned):
+            return self._fallback(raw_text, reason="too_long", latency_ms=latency_ms)
 
         cost_usd = self._estimate_cost(tokens_in, tokens_out, self._config.model)
+        log.info(
+            "polish_success",
+            model=self._config.model,
+            mode=self._config.mode,
+            tokens_in=tokens_in,
+            tokens_out=tokens_out,
+            cost_usd=round(cost_usd, 6),
+            latency_ms=latency_ms,
+        )
         return PolishResult(
             text=cleaned,
             fallback=False,
@@ -187,48 +228,82 @@ class PostProcess:
             tokens_out=tokens_out,
             cost_usd=cost_usd,
             latency_ms=latency_ms,
+            reason="ok",
         )
 
     async def _call_with_retry(
         self, body: dict[str, object], headers: dict[str, str]
-    ) -> tuple[str | None, int, int]:
+    ) -> tuple[str | None, int, int, str]:
+        """Return (content, tokens_in, tokens_out, reason).
+
+        `reason` is "ok" on success or a fine-grained failure code:
+        http_401 / http_403 / http_429 / http_5xx / timeout / network_error /
+        empty_choices / empty_content / api_error.
+        """
         delays = [0.5, 1.0, 2.0]
         # `retries` is the number of retry attempts *after* the initial call,
         # so total attempts = retries + 1.
         attempts = max(1, self._config.retries + 1)
+        last_reason = "api_error"
 
         async with httpx.AsyncClient(timeout=self._config.timeout_seconds) as client:
             for attempt in range(attempts):
                 try:
                     resp = await client.post(API_URL, json=body, headers=headers)
-                except (httpx.TimeoutException, httpx.ConnectError, httpx.ReadError):
+                except httpx.TimeoutException:
+                    last_reason = "timeout"
                     if attempt + 1 < attempts:
                         await asyncio.sleep(delays[min(attempt, len(delays) - 1)])
                         continue
-                    return None, 0, 0
+                    return None, 0, 0, last_reason
+                except (httpx.ConnectError, httpx.ReadError):
+                    last_reason = "network_error"
+                    if attempt + 1 < attempts:
+                        await asyncio.sleep(delays[min(attempt, len(delays) - 1)])
+                        continue
+                    return None, 0, 0, last_reason
 
-                if resp.status_code == 200:
-                    data = resp.json()
-                    msg = data["choices"][0]["message"]["content"]
-                    usage = data.get("usage", {})
+                if resp.is_success:
+                    try:
+                        data = resp.json()
+                    except ValueError:
+                        return None, 0, 0, "api_error"
+                    choices = data.get("choices") or []
+                    if not choices:
+                        return None, 0, 0, "empty_choices"
+                    message = choices[0].get("message") or {}
+                    content = message.get("content")
+                    if not content:
+                        return None, 0, 0, "empty_content"
+                    usage = data.get("usage") or {}
                     return (
-                        msg,
-                        usage.get("prompt_tokens", 0),
-                        usage.get("completion_tokens", 0),
+                        content,
+                        int(usage.get("prompt_tokens", 0) or 0),
+                        int(usage.get("completion_tokens", 0) or 0),
+                        "ok",
                     )
 
                 if resp.status_code in (401, 403):
-                    return None, 0, 0
+                    return None, 0, 0, f"http_{resp.status_code}"
 
-                if resp.status_code == 429 or resp.status_code >= 500:
+                if resp.status_code == 429:
+                    last_reason = "http_429"
                     if attempt + 1 < attempts:
                         await asyncio.sleep(delays[min(attempt, len(delays) - 1)])
                         continue
-                    return None, 0, 0
+                    return None, 0, 0, last_reason
 
-                return None, 0, 0
+                if resp.status_code >= 500:
+                    last_reason = "http_5xx"
+                    if attempt + 1 < attempts:
+                        await asyncio.sleep(delays[min(attempt, len(delays) - 1)])
+                        continue
+                    return None, 0, 0, last_reason
 
-        return None, 0, 0
+                # 4xx other than 401/403/429 — don't retry, model/body issue.
+                return None, 0, 0, f"http_{resp.status_code}"
+
+        return None, 0, 0, last_reason
 
     @staticmethod
     def _looks_refused(text: str) -> bool:
@@ -249,6 +324,12 @@ class PostProcess:
 
     @staticmethod
     def _fallback(raw: str, reason: str, latency_ms: int = 0) -> PolishResult:
+        log.warning(
+            "polish_fallback",
+            reason=reason,
+            latency_ms=latency_ms,
+            input_chars=len(raw),
+        )
         return PolishResult(
             text=raw,
             fallback=True,
@@ -256,4 +337,5 @@ class PostProcess:
             tokens_out=0,
             cost_usd=0.0,
             latency_ms=latency_ms,
+            reason=reason,
         )
