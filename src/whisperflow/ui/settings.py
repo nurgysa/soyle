@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QListWidget,
     QMainWindow,
+    QMessageBox,
     QPushButton,
     QSpinBox,
     QTabWidget,
@@ -146,11 +147,75 @@ class SettingsWindow(QMainWindow):
 
         self._pp_api_key = QLineEdit()
         self._pp_api_key.setEchoMode(QLineEdit.EchoMode.Password)
-        existing = self._store.get_api_key()
-        if existing:
-            self._pp_api_key.setPlaceholderText("••••••• (ключ сохранён)")
-        layout.addRow("OpenRouter API key:", self._pp_api_key)
+        self._pp_api_key.setPlaceholderText("sk-or-v1-…")
+
+        self._pp_show_key_btn = QPushButton("Показать")
+        self._pp_show_key_btn.setCheckable(True)
+        self._pp_show_key_btn.setFixedWidth(90)
+        self._pp_show_key_btn.setToolTip("Временно сделать ключ видимым")
+        self._pp_show_key_btn.toggled.connect(self._toggle_key_visibility)
+
+        self._pp_clear_key_btn = QPushButton("Удалить")
+        self._pp_clear_key_btn.setFixedWidth(90)
+        self._pp_clear_key_btn.setToolTip(
+            "Стереть сохранённый ключ из Windows Credential Manager"
+        )
+        self._pp_clear_key_btn.clicked.connect(self._clear_api_key_clicked)
+
+        key_row = QHBoxLayout()
+        key_row.addWidget(self._pp_api_key, 1)
+        key_row.addWidget(self._pp_show_key_btn)
+        key_row.addWidget(self._pp_clear_key_btn)
+        layout.addRow("OpenRouter API key:", key_row)
+
+        # Status line — shows whether a key is currently stored and a
+        # masked preview so the user can tell "which" key is active.
+        self._pp_key_status = QLabel()
+        self._refresh_key_status()
+        layout.addRow("", self._pp_key_status)
         return w
+
+    # ---- API key helpers ----
+
+    def _toggle_key_visibility(self, checked: bool) -> None:
+        mode = QLineEdit.EchoMode.Normal if checked else QLineEdit.EchoMode.Password
+        self._pp_api_key.setEchoMode(mode)
+        self._pp_show_key_btn.setText("Скрыть" if checked else "Показать")
+
+    def _clear_api_key_clicked(self) -> None:
+        if self._store.get_api_key() is None and not self._pp_api_key.text():
+            # Nothing to clear — silently no-op rather than asking a
+            # confirmation the user won't understand.
+            return
+        resp = QMessageBox.question(
+            self,
+            "WhisperFlow",
+            "Удалить сохранённый API-ключ из Windows Credential Manager?\n"
+            "Постобработка вернётся к выводу сырых транскриптов, пока "
+            "не задан новый ключ.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if resp != QMessageBox.StandardButton.Yes:
+            return
+        self._store.clear_api_key()
+        self._pp_api_key.clear()
+        self._refresh_key_status()
+
+    def _refresh_key_status(self) -> None:
+        key = self._store.get_api_key()
+        if key:
+            tail = key[-4:] if len(key) >= 4 else "••••"
+            head = key[:10] if len(key) >= 10 else key
+            self._pp_key_status.setText(
+                f"✓ Ключ сохранён: {head}…{tail}  ·  хранится в Windows Credential Manager"
+            )
+            self._pp_clear_key_btn.setEnabled(True)
+        else:
+            self._pp_key_status.setText(
+                "✗ Ключ не задан — постобработка работает в fallback-режиме"
+            )
+            self._pp_clear_key_btn.setEnabled(False)
 
     def _build_ui_tab(self) -> QWidget:
         w = QWidget()
@@ -292,7 +357,10 @@ class SettingsWindow(QMainWindow):
         if new_key:
             self._store.set_api_key(new_key)
             self._pp_api_key.clear()
-            self._pp_api_key.setPlaceholderText("••••••• (ключ сохранён)")
+            # Force show-toggle back off so the next open doesn't leak.
+            if self._pp_show_key_btn.isChecked():
+                self._pp_show_key_btn.setChecked(False)
+            self._refresh_key_status()
 
         self._cfg.ui.theme = self._ui_theme.currentText()  # type: ignore[assignment]
         self._cfg.ui.sound_enabled = self._ui_sound.isChecked()
