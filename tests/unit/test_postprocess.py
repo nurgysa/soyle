@@ -8,7 +8,12 @@ import pytest
 import respx
 
 from whisperflow.core.config import PostProcessConfig
-from whisperflow.core.postprocess import PostProcess
+from whisperflow.core.postprocess import (
+    POPULAR_MODELS,
+    ModelPreset,
+    PostProcess,
+    model_pricing,
+)
 
 API_URL = "https://openrouter.ai/api/v1/chat/completions"
 
@@ -206,3 +211,48 @@ async def test_mode_rewrite_uses_rewrite_prompt(
     await pp.polish("raw text", language="en")
     assert "REWRITE-INSTRUCTIONS" in seen["system"]
     assert "POLISH-INSTRUCTIONS" not in seen["system"]
+
+
+# ---- Model presets + pricing ----
+
+def test_popular_models_is_four_google_entries() -> None:
+    assert len(POPULAR_MODELS) == 4
+    for preset in POPULAR_MODELS:
+        assert isinstance(preset, ModelPreset)
+        assert preset.model_id.startswith("google/")
+
+
+def test_model_pricing_known_model() -> None:
+    in_p, out_p = model_pricing("google/gemini-2.5-flash-lite")
+    assert in_p == 0.10
+    assert out_p == 0.40
+
+
+def test_model_pricing_free_tier_is_zero() -> None:
+    in_p, out_p = model_pricing("google/gemma-4-31b:free")
+    assert in_p == 0.0
+    assert out_p == 0.0
+
+
+def test_model_pricing_unknown_falls_back() -> None:
+    in_p, out_p = model_pricing("unknown/model-xyz")
+    # Falls back to Gemini 2.5 Flash Lite defaults.
+    assert in_p == 0.10
+    assert out_p == 0.40
+
+
+def test_display_label_contains_id_label_and_prices() -> None:
+    preset = ModelPreset("x/y", "My Model", price_in_per_m=1.0, price_out_per_m=2.5)
+    label = preset.display_label
+    assert "x/y" in label
+    assert "My Model" in label
+    assert "$1.00" in label
+    assert "$2.50" in label
+
+
+def test_estimate_cost_uses_selected_model() -> None:
+    # Free tier → zero.
+    assert PostProcess._estimate_cost(100, 100, "google/gemma-4-31b:free") == 0.0
+    # Gemini Flash Lite: 100/1M * 0.10 + 100/1M * 0.40 = 0.00005
+    cost = PostProcess._estimate_cost(100, 100, "google/gemini-2.5-flash-lite")
+    assert cost == pytest.approx(0.00005)

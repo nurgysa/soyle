@@ -13,21 +13,64 @@ from whisperflow.core.config import PostProcessConfig
 
 API_URL = "https://openrouter.ai/api/v1/chat/completions"
 
-# Curated list of OpenRouter models suitable for short-text polish/rewrite.
-# Each entry: (model_id, short human-readable label shown in the UI).
-# Ordered roughly cheapest/fastest → most capable.
-POPULAR_MODELS: tuple[tuple[str, str], ...] = (
-    ("google/gemini-2.5-flash-lite", "Gemini 2.5 Flash Lite — fastest, cheapest"),
-    ("google/gemini-2.5-flash", "Gemini 2.5 Flash — balanced"),
-    ("openai/gpt-4.1-nano", "GPT-4.1 Nano — OpenAI small"),
-    ("openai/gpt-4.1-mini", "GPT-4.1 Mini — OpenAI balanced"),
-    ("anthropic/claude-haiku-4-5", "Claude Haiku 4.5 — Anthropic fast"),
-    ("anthropic/claude-sonnet-4-5", "Claude Sonnet 4.5 — Anthropic quality"),
-    ("deepseek/deepseek-chat", "DeepSeek Chat — cheap, strong"),
-    ("mistralai/mistral-small-latest", "Mistral Small — European"),
-    ("meta-llama/llama-3.3-70b-instruct", "Llama 3.3 70B — open-weights"),
-    ("qwen/qwen-2.5-72b-instruct", "Qwen 2.5 72B — multilingual"),
+# Curated list of Google-hosted OpenRouter models suitable for polish/rewrite.
+# Prices are USD per 1 million tokens. Check openrouter.ai/models for up-to-date
+# figures — we use these both for the UI label and for the cost estimate.
+
+
+@dataclass(frozen=True)
+class ModelPreset:
+    model_id: str
+    label: str
+    price_in_per_m: float
+    price_out_per_m: float
+
+    @property
+    def display_label(self) -> str:
+        return (
+            f"{self.model_id}  ·  {self.label}  ·  "
+            f"${self.price_in_per_m:.2f} / ${self.price_out_per_m:.2f} per M"
+        )
+
+
+POPULAR_MODELS: tuple[ModelPreset, ...] = (
+    ModelPreset(
+        "google/gemma-4-31b:free",
+        "Gemma 4 31B (free)",
+        price_in_per_m=0.0,
+        price_out_per_m=0.0,
+    ),
+    ModelPreset(
+        "google/gemma-4-31b",
+        "Gemma 4 31B",
+        price_in_per_m=0.10,
+        price_out_per_m=0.30,
+    ),
+    ModelPreset(
+        "google/gemini-2.5-flash-lite-preview-09-2025",
+        "Gemini 2.5 Flash Lite Preview 09-2025",
+        price_in_per_m=0.10,
+        price_out_per_m=0.40,
+    ),
+    ModelPreset(
+        "google/gemini-2.5-flash-lite",
+        "Gemini 2.5 Flash Lite",
+        price_in_per_m=0.10,
+        price_out_per_m=0.40,
+    ),
 )
+
+
+def model_pricing(model_id: str) -> tuple[float, float]:
+    """Return (input_price, output_price) per 1M tokens for the given model.
+
+    Falls back to Gemini 2.5 Flash Lite pricing if the model isn't in our
+    curated list. Callers (cost estimator) can treat this as a rough hint.
+    """
+    for preset in POPULAR_MODELS:
+        if preset.model_id == model_id:
+            return preset.price_in_per_m, preset.price_out_per_m
+    return 0.10, 0.40
 REFUSAL_MARKERS = (
     "i can't help",
     "i cannot help",
@@ -136,7 +179,7 @@ class PostProcess:
                 raw_text, reason="refused_or_hallucinated", latency_ms=latency_ms
             )
 
-        cost_usd = self._estimate_cost(tokens_in, tokens_out)
+        cost_usd = self._estimate_cost(tokens_in, tokens_out, self._config.model)
         return PolishResult(
             text=cleaned,
             fallback=False,
@@ -199,9 +242,10 @@ class PostProcess:
         return len(reply) / max(len(raw), 1) > MAX_LENGTH_RATIO
 
     @staticmethod
-    def _estimate_cost(tokens_in: int, tokens_out: int) -> float:
-        # Gemini 2.5 Flash Lite: $0.10/M input, $0.40/M output
-        return (tokens_in / 1_000_000) * 0.10 + (tokens_out / 1_000_000) * 0.40
+    def _estimate_cost(tokens_in: int, tokens_out: int, model_id: str) -> float:
+        """Cost in USD based on the selected model's per-million pricing."""
+        in_per_m, out_per_m = model_pricing(model_id)
+        return (tokens_in / 1_000_000) * in_per_m + (tokens_out / 1_000_000) * out_per_m
 
     @staticmethod
     def _fallback(raw: str, reason: str, latency_ms: int = 0) -> PolishResult:

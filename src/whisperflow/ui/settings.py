@@ -129,8 +129,8 @@ class SettingsWindow(QMainWindow):
 
         self._pp_model = QComboBox()
         self._pp_model.setEditable(True)
-        for model_id, label in POPULAR_MODELS:
-            self._pp_model.addItem(f"{model_id}  ·  {label}", model_id)
+        for preset in POPULAR_MODELS:
+            self._pp_model.addItem(preset.display_label, preset.model_id)
         # Pre-select current value (may be from the preset list or a custom entry).
         current = self._cfg.postprocess.model
         preset_idx = self._pp_model.findData(current)
@@ -239,21 +239,17 @@ class SettingsWindow(QMainWindow):
     # ---- Helpers ----
 
     def _resolve_model_id(self) -> str:
-        """Return model id: preset `data` if an item is selected, else typed text.
+        """Return model id: preset `data` if selected unchanged, else typed text.
 
-        Preset items display as "<id>  ·  <label>", so if the user typed a
-        custom id by hand and that exact label isn't in the list, we take
-        everything before the " · " separator from the visible text.
+        Preset items display as "<id>  ·  <label>  ·  $in / $out per M". If
+        the user typed a custom id, we return the part before the first "  ·  ".
         """
         idx = self._pp_model.currentIndex()
-        current_text = self._pp_model.currentText().strip()
         if idx >= 0:
             data = self._pp_model.itemData(idx)
-            # Only trust preset data if the user hasn't edited the visible text.
             if isinstance(data, str) and self._pp_model.itemText(idx) == self._pp_model.currentText():
                 return data
-        # Custom value — strip the "id · label" separator if present.
-        return current_text.split("  ·  ", 1)[0].strip()
+        return self._pp_model.currentText().strip().split("  ·  ", 1)[0].strip()
 
     # ---- Save ----
 
