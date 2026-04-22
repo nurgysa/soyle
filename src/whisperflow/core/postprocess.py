@@ -12,6 +12,22 @@ import httpx
 from whisperflow.core.config import PostProcessConfig
 
 API_URL = "https://openrouter.ai/api/v1/chat/completions"
+
+# Curated list of OpenRouter models suitable for short-text polish/rewrite.
+# Each entry: (model_id, short human-readable label shown in the UI).
+# Ordered roughly cheapest/fastest → most capable.
+POPULAR_MODELS: tuple[tuple[str, str], ...] = (
+    ("google/gemini-2.5-flash-lite", "Gemini 2.5 Flash Lite — fastest, cheapest"),
+    ("google/gemini-2.5-flash", "Gemini 2.5 Flash — balanced"),
+    ("openai/gpt-4.1-nano", "GPT-4.1 Nano — OpenAI small"),
+    ("openai/gpt-4.1-mini", "GPT-4.1 Mini — OpenAI balanced"),
+    ("anthropic/claude-haiku-4-5", "Claude Haiku 4.5 — Anthropic fast"),
+    ("anthropic/claude-sonnet-4-5", "Claude Sonnet 4.5 — Anthropic quality"),
+    ("deepseek/deepseek-chat", "DeepSeek Chat — cheap, strong"),
+    ("mistralai/mistral-small-latest", "Mistral Small — European"),
+    ("meta-llama/llama-3.3-70b-instruct", "Llama 3.3 70B — open-weights"),
+    ("qwen/qwen-2.5-72b-instruct", "Qwen 2.5 72B — multilingual"),
+)
 REFUSAL_MARKERS = (
     "i can't help",
     "i cannot help",

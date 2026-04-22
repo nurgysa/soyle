@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
 
 from whisperflow.core.config import Config, ConfigStore
 from whisperflow.core.dictionary import DictionaryStore
+from whisperflow.core.postprocess import POPULAR_MODELS
 
 
 class SettingsWindow(QMainWindow):
@@ -126,7 +127,17 @@ class SettingsWindow(QMainWindow):
         self._pp_mode.setCurrentIndex(max(0, idx))
         layout.addRow("Режим:", self._pp_mode)
 
-        self._pp_model = QLineEdit(self._cfg.postprocess.model)
+        self._pp_model = QComboBox()
+        self._pp_model.setEditable(True)
+        for model_id, label in POPULAR_MODELS:
+            self._pp_model.addItem(f"{model_id}  ·  {label}", model_id)
+        # Pre-select current value (may be from the preset list or a custom entry).
+        current = self._cfg.postprocess.model
+        preset_idx = self._pp_model.findData(current)
+        if preset_idx >= 0:
+            self._pp_model.setCurrentIndex(preset_idx)
+        else:
+            self._pp_model.setEditText(current)
         layout.addRow("Модель:", self._pp_model)
         self._pp_timeout = QDoubleSpinBox()
         self._pp_timeout.setRange(1.0, 30.0)
@@ -225,6 +236,25 @@ class SettingsWindow(QMainWindow):
         layout.addStretch()
         return w
 
+    # ---- Helpers ----
+
+    def _resolve_model_id(self) -> str:
+        """Return model id: preset `data` if an item is selected, else typed text.
+
+        Preset items display as "<id>  ·  <label>", so if the user typed a
+        custom id by hand and that exact label isn't in the list, we take
+        everything before the " · " separator from the visible text.
+        """
+        idx = self._pp_model.currentIndex()
+        current_text = self._pp_model.currentText().strip()
+        if idx >= 0:
+            data = self._pp_model.itemData(idx)
+            # Only trust preset data if the user hasn't edited the visible text.
+            if isinstance(data, str) and self._pp_model.itemText(idx) == self._pp_model.currentText():
+                return data
+        # Custom value — strip the "id · label" separator if present.
+        return current_text.split("  ·  ", 1)[0].strip()
+
     # ---- Save ----
 
     def _save(self) -> None:
@@ -242,7 +272,7 @@ class SettingsWindow(QMainWindow):
 
         self._cfg.postprocess.enabled = self._pp_enabled.isChecked()
         self._cfg.postprocess.mode = self._pp_mode.currentData()  # type: ignore[assignment]
-        self._cfg.postprocess.model = self._pp_model.text().strip()
+        self._cfg.postprocess.model = self._resolve_model_id()
         self._cfg.postprocess.timeout_seconds = self._pp_timeout.value()
 
         new_key = self._pp_api_key.text().strip()
