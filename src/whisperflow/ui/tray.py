@@ -1,9 +1,11 @@
 """System tray icon with context menu."""
 from __future__ import annotations
 
-from PySide6.QtCore import QObject, Signal
-from PySide6.QtGui import QAction, QActionGroup, QIcon, QPainter, QPixmap
+from PySide6.QtCore import QObject, QRectF, Qt, Signal
+from PySide6.QtGui import QAction, QActionGroup, QColor, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import QMenu, QSystemTrayIcon
+
+from whisperflow.ui.resources import asset_path
 
 
 class TrayIcon(QObject):
@@ -94,10 +96,30 @@ class TrayIcon(QObject):
 
     @staticmethod
     def _make_icon(recording: bool) -> QIcon:
-        pix = QPixmap(32, 32)
-        pix.fill()
+        """Load the bundled .ico; for the recording state, overlay a red
+        circle in the top-right corner so the user sees the change at
+        16-20px sizes where the main icon's colour isn't very distinct.
+
+        Falls back to a solid coloured square if the asset is missing —
+        that path only matters during `pytest` without assets/ present.
+        """
+        ico_path = asset_path("icon.ico")
+        if not ico_path.exists():
+            pix = QPixmap(32, 32)
+            pix.fill(QColor("#e74c3c" if recording else "#2d2d30"))
+            return QIcon(pix)
+
+        base = QIcon(str(ico_path))
+        if not recording:
+            return base
+
+        # Build an overlay-stamped pixmap. Render at 64px so the red dot
+        # stays crisp after Qt downsamples for the tray.
+        pix = base.pixmap(64, 64)
         painter = QPainter(pix)
-        color = "#e74c3c" if recording else "#2d2d30"
-        painter.fillRect(pix.rect(), color)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setBrush(QColor("#e74c3c"))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawEllipse(QRectF(40, 4, 20, 20))
         painter.end()
         return QIcon(pix)
