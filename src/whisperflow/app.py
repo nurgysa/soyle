@@ -310,6 +310,7 @@ class WhisperFlowApp(QObject):
         if not fallback and cost_usd > 0:
             self._usage.record(cost_usd)
             self._refresh_usage_menu()
+            self._check_monthly_limit(cost_usd)
 
         if inject_result.blocked:
             self._tray.toast(
@@ -345,6 +346,30 @@ class WhisperFlowApp(QObject):
 
     def _refresh_usage_menu(self) -> None:
         self._tray.set_usage_text(self._usage.summary_line())
+
+    def _check_monthly_limit(self, new_cost: float) -> None:
+        """Warn once when this request crossed the configured monthly cap.
+
+        Silent if the limit is 0 (disabled), if we were already over (warning
+        was shown earlier), or if we're still under. This keeps the toast as
+        a single event per threshold crossing rather than per-request spam.
+        """
+        limit = self._cfg.behavior.monthly_cost_limit_usd
+        if limit <= 0:
+            return
+        current, _ = self._usage.this_month()
+        previous = current - new_cost
+        if previous < limit <= current:
+            self._tray.toast(
+                "WhisperFlow",
+                f"Месячный лимит превышен: ${current:.4f} из ${limit:.2f}",
+                level="warning",
+            )
+            log.warning(
+                "monthly_limit_exceeded",
+                current_usd=round(current, 6),
+                limit_usd=limit,
+            )
 
     def _after_inject(self) -> None:
         self._indicator.hide_indicator()

@@ -30,6 +30,12 @@ def test_config_defaults() -> None:
     assert cfg.ui.theme == "dark"
     assert cfg.behavior.autostart is False
     assert cfg.behavior.log_transcriptions is False
+    assert cfg.behavior.monthly_cost_limit_usd == 0.0  # disabled by default
+
+
+def test_behavior_cost_limit_rejects_negative() -> None:
+    with pytest.raises(ValueError):
+        BehaviorConfig(monthly_cost_limit_usd=-1.0)
 
 
 def test_hotkey_mode_validated() -> None:

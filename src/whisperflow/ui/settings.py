@@ -171,6 +171,17 @@ class SettingsWindow(QMainWindow):
         idx = self._beh_inject.findData(self._cfg.behavior.inject_method)
         self._beh_inject.setCurrentIndex(max(0, idx))
         layout.addRow("Метод вставки:", self._beh_inject)
+
+        self._beh_cost_limit = QDoubleSpinBox()
+        self._beh_cost_limit.setDecimals(2)
+        self._beh_cost_limit.setRange(0.0, 1000.0)
+        self._beh_cost_limit.setSingleStep(0.5)
+        self._beh_cost_limit.setSuffix(" $")
+        self._beh_cost_limit.setValue(self._cfg.behavior.monthly_cost_limit_usd)
+        self._beh_cost_limit.setToolTip(
+            "Предупреждение в трее при превышении. 0 = выключено."
+        )
+        layout.addRow("Лимит в месяц:", self._beh_cost_limit)
         return w
 
     def _build_dictionary_tab(self) -> QWidget:
@@ -287,6 +298,7 @@ class SettingsWindow(QMainWindow):
         self._cfg.ui.sound_enabled = self._ui_sound.isChecked()
         self._cfg.behavior.autostart = self._beh_autostart.isChecked()
         self._cfg.behavior.inject_method = self._beh_inject.currentData()  # type: ignore[assignment]
+        self._cfg.behavior.monthly_cost_limit_usd = float(self._beh_cost_limit.value())
 
         self._store.save(self._cfg)
         self.settings_saved.emit()

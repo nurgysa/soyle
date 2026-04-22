@@ -77,8 +77,16 @@ class TrayIcon(QObject):
         label = "Rewrite" if mode == "rewrite" else "Polish"
         self._tray.setToolTip(f"WhisperFlow — режим {label}")
 
-    def toast(self, title: str, message: str) -> None:
-        self._tray.showMessage(title, message, QSystemTrayIcon.MessageIcon.Information, 3000)
+    def toast(self, title: str, message: str, level: str = "info") -> None:
+        """Show a balloon notification. ``level`` picks the icon shape:
+        "info" (default), "warning" (yellow triangle), "critical" (red X)."""
+        icons = {
+            "info": QSystemTrayIcon.MessageIcon.Information,
+            "warning": QSystemTrayIcon.MessageIcon.Warning,
+            "critical": QSystemTrayIcon.MessageIcon.Critical,
+        }
+        icon = icons.get(level, QSystemTrayIcon.MessageIcon.Information)
+        self._tray.showMessage(title, message, icon, 3000)
 
     def set_usage_text(self, text: str) -> None:
         """Update the non-interactive usage label in the tray menu."""

@@ -88,6 +88,10 @@ class BehaviorConfig(BaseModel):
     check_updates: bool = True
     log_transcriptions: bool = False
     inject_method: Literal["clipboard", "keystroke"] = "clipboard"
+    # Monthly spend cap in USD. 0 disables the warning. When a polished
+    # request pushes the month total over this value, a warning toast is
+    # shown once — subsequent requests in the same month are silent.
+    monthly_cost_limit_usd: float = Field(default=0.0, ge=0.0)
 
 
 class Config(BaseModel):
