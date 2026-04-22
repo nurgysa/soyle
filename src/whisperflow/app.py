@@ -161,6 +161,12 @@ class WhisperFlowApp(QObject):
         # Warm up Whisper in background so first transcription is fast
         QTimer.singleShot(250, self._warm_up_transcriber)
 
+        # First-run wizard: if config.toml didn't exist until now, pull
+        # the user into Settings and focus the API-key field. Delayed so
+        # the tray icon appears first and the dialog is less jarring.
+        if self._store.is_first_run:
+            QTimer.singleShot(600, self._show_first_run_wizard)
+
     def quit(self) -> None:
         self._hotkey.stop()
         if self._esc_hook is not None:
@@ -389,6 +395,17 @@ class WhisperFlowApp(QObject):
         self._settings_window.show()
         self._settings_window.raise_()
         self._settings_window.activateWindow()
+
+    def _show_first_run_wizard(self) -> None:
+        self._show_settings()
+        if self._settings_window is not None:
+            self._settings_window.focus_api_key_setup()
+        self._tray.toast(
+            "Добро пожаловать в WhisperFlow",
+            "Вставьте OpenRouter API-ключ, чтобы включить полировку. "
+            "Без ключа можно работать — получите сырую транскрипцию.",
+        )
+        log.info("first_run_wizard_shown")
 
     def _reload_config(self) -> None:
         self._cfg = self._store.load()

@@ -38,6 +38,23 @@ def test_behavior_cost_limit_rejects_negative() -> None:
         BehaviorConfig(monthly_cost_limit_usd=-1.0)
 
 
+def test_config_store_is_first_run_when_file_missing(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    assert not path.exists()
+    store = ConfigStore(config_path=path)
+    assert store.is_first_run is True
+    # `load()` may create the file on first run — that must NOT flip the flag.
+    store.load()
+    assert store.is_first_run is True
+
+
+def test_config_store_is_first_run_false_when_file_exists(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text("version = 1\n", encoding="utf-8")
+    store = ConfigStore(config_path=path)
+    assert store.is_first_run is False
+
+
 def test_hotkey_mode_validated() -> None:
     with pytest.raises(ValueError, match=r"push_to_talk|toggle"):
         HotkeyConfig(mode="invalid")

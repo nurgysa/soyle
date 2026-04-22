@@ -119,10 +119,20 @@ class ConfigStore:
 
     def __init__(self, config_path: Path | None = None) -> None:
         self._path = config_path or default_config_path()
+        # Snapshot existence BEFORE any load() call can create the file —
+        # used by the UI to trigger the first-run wizard. A second
+        # ConfigStore constructed later will report is_first_run=False
+        # because by then load() has written the default config.
+        self._existed_at_init = self._path.exists()
 
     @property
     def path(self) -> Path:
         return self._path
+
+    @property
+    def is_first_run(self) -> bool:
+        """True if config.toml did not exist when this store was constructed."""
+        return not self._existed_at_init
 
     def load(self) -> Config:
         if not self._path.exists():

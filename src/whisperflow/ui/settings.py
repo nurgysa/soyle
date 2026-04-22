@@ -181,6 +181,22 @@ class SettingsWindow(QMainWindow):
         layout.addRow("", self._pp_key_status)
         return w
 
+    # ---- First-run wizard helpers ----
+
+    def focus_api_key_setup(self) -> None:
+        """Jump to the LLM tab and put the cursor on the API-key field.
+
+        Used by the first-run wizard in app.py to pull the user directly
+        to the one setup step that actually matters on a clean install.
+        """
+        # Find the LLM tab by label rather than hardcoding the index so
+        # reordering tabs doesn't silently send us to the wrong one.
+        for i in range(self._tabs.count()):
+            if self._tabs.tabText(i) == "LLM":
+                self._tabs.setCurrentIndex(i)
+                break
+        self._pp_api_key.setFocus()
+
     # ---- API key helpers ----
 
     def _toggle_key_visibility(self, checked: bool) -> None:
