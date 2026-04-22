@@ -153,6 +153,13 @@ class ConfigStore:
         self._path.parent.mkdir(parents=True, exist_ok=True)
 
     def _backup_broken(self) -> None:
+        # Defend against symlink attack: a local attacker who can write in
+        # the parent dir could plant a symlink pointing elsewhere and
+        # trick us into renaming an unrelated file. We own this directory,
+        # so a symlink here is always unexpected — unlink and move on.
+        if self._path.is_symlink():
+            self._path.unlink()
+            return
         ts = datetime.now(tz=UTC).strftime("%Y%m%dT%H%M%S")
         backup = self._path.with_suffix(f".toml.broken-{ts}")
         self._path.rename(backup)

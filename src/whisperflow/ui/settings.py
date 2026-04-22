@@ -165,6 +165,12 @@ class SettingsWindow(QMainWindow):
         self._beh_autostart = QCheckBox("Запуск при старте Windows")
         self._beh_autostart.setChecked(self._cfg.behavior.autostart)
         layout.addRow(self._beh_autostart)
+        self._beh_inject = QComboBox()
+        self._beh_inject.addItem("Буфер обмена (быстрее, совместимо)", "clipboard")
+        self._beh_inject.addItem("Эмуляция клавиш (не трогает буфер)", "keystroke")
+        idx = self._beh_inject.findData(self._cfg.behavior.inject_method)
+        self._beh_inject.setCurrentIndex(max(0, idx))
+        layout.addRow("Метод вставки:", self._beh_inject)
         return w
 
     def _build_dictionary_tab(self) -> QWidget:
@@ -280,6 +286,7 @@ class SettingsWindow(QMainWindow):
         self._cfg.ui.theme = self._ui_theme.currentText()  # type: ignore[assignment]
         self._cfg.ui.sound_enabled = self._ui_sound.isChecked()
         self._cfg.behavior.autostart = self._beh_autostart.isChecked()
+        self._cfg.behavior.inject_method = self._beh_inject.currentData()  # type: ignore[assignment]
 
         self._store.save(self._cfg)
         self.settings_saved.emit()

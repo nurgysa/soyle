@@ -1,4 +1,16 @@
-"""Inject text into the foreground window via clipboard + Ctrl+V."""
+"""Inject text into the foreground window.
+
+Two methods, selected via ``BehaviorConfig.inject_method``:
+
+- ``clipboard`` (default) — put text in the clipboard, synthesise Ctrl+V
+  (or WM_PASTE for legacy Win32 edit children), restore the prior
+  clipboard content after a short delay. Works everywhere but briefly
+  exposes the polished text to any running clipboard manager.
+- ``keystroke`` — synthesise Unicode keystrokes directly via the
+  ``keyboard`` library. Slower on long strings, may misbehave if the
+  user touches the keyboard mid-injection, but never touches the
+  clipboard.
+"""
 from __future__ import annotations
 
 import re
@@ -6,6 +18,7 @@ import time
 from dataclasses import dataclass
 from typing import Literal
 
+import keyboard
 import pyperclip
 import structlog
 from PySide6.QtCore import QTimer
@@ -57,12 +70,33 @@ class InjectResult:
     blocked: bool = False  # True if target was on the terminal blocklist
 
 
-class Injector:
-    """Paste text into the captured HWND; restore clipboard after a short delay."""
+InjectMethod = Literal["clipboard", "keystroke"]
 
-    def __init__(self, bus: EventBus, restore_delay_ms: int = 500) -> None:
+
+class Injector:
+    """Inject text into the captured HWND.
+
+    Default is ``clipboard`` — save the existing clipboard, copy text,
+    trigger paste, restore the clipboard after ``restore_delay_ms``. The
+    ``keystroke`` mode skips the clipboard entirely by synthesising
+    Unicode keystrokes via the ``keyboard`` library.
+    """
+
+    def __init__(
+        self,
+        bus: EventBus,
+        restore_delay_ms: int = 500,
+        method: InjectMethod = "clipboard",
+    ) -> None:
         self._bus = bus
         self._restore_delay_ms = restore_delay_ms
+        self._method: InjectMethod = method
+
+    def set_method(self, method: str) -> None:
+        """Switch the injection strategy at runtime. Invalid values raise."""
+        if method not in ("clipboard", "keystroke"):
+            raise ValueError(f"unknown inject method: {method!r}")
+        self._method = method  # type: ignore[assignment]
 
     def capture_target(self) -> int:
         hwnd = get_foreground_hwnd()
@@ -96,7 +130,9 @@ class Injector:
 
         # Terminal blocklist: dropping polished LLM text (which may contain
         # newlines) straight into a shell would auto-execute commands. Keep
-        # the text in the clipboard for a manual Ctrl+V instead.
+        # the text in the clipboard for a manual Ctrl+V instead. Applies
+        # regardless of inject method — a stray \n via keystroke would
+        # execute just the same.
         if target_class in _TERMINAL_CLASSES:
             pyperclip.copy(text)
             _log.warning(
@@ -110,6 +146,28 @@ class Injector:
             )
             return InjectResult(
                 success=False, method="paste", target_changed=False, blocked=True
+            )
+
+        # Opt-in: type each character directly, never touching the clipboard.
+        # Trade-off — slower on long strings and sensitive to user's own
+        # keystrokes landing in the middle.
+        if self._method == "keystroke":
+            try:
+                keyboard.write(text, delay=0)
+            except Exception as exc:
+                _log.warning("keystroke_inject_failed", error=str(exc))
+                self._bus.emit(
+                    Event.INJECTED, {"success": False, "target_changed": False}
+                )
+                return InjectResult(
+                    success=False, method="keystroke", target_changed=False
+                )
+            _log.info("inject_keystroke", text_len=len(text))
+            self._bus.emit(
+                Event.INJECTED, {"success": True, "target_changed": False}
+            )
+            return InjectResult(
+                success=True, method="keystroke", target_changed=False
             )
 
         backup = pyperclip.paste()

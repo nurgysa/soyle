@@ -98,7 +98,7 @@ class WhisperFlowApp(QObject):
         self._settings_window: SettingsWindow | None = None
 
         self._recorder = Recorder(bus=self._bus)
-        self._injector = Injector(bus=self._bus)
+        self._injector = Injector(bus=self._bus, method=self._cfg.behavior.inject_method)
         self._transcriber = Transcriber(
             model=self._cfg.whisper.model,
             device=self._cfg.whisper.device,
@@ -375,6 +375,7 @@ class WhisperFlowApp(QObject):
             rewrite_prompt_path=prompt_path(self._cfg.postprocess.rewrite_prompt_file),
             dictionary_hint=self._dict_store.as_llm_instruction(),
         )
+        self._injector.set_method(self._cfg.behavior.inject_method)
         self._tray.set_mode(self._cfg.postprocess.mode)
         # User just saved — give the auth warning another chance if the key
         # was edited.

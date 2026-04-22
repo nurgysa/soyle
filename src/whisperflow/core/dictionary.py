@@ -116,6 +116,10 @@ class DictionaryStore:
     def _backup_broken(self) -> None:
         if not self._path.exists():
             return
+        # Symlink-attack defence — see ConfigStore._backup_broken for rationale.
+        if self._path.is_symlink():
+            self._path.unlink()
+            return
         ts = datetime.now(tz=UTC).strftime("%Y%m%dT%H%M%S")
         backup = self._path.with_suffix(f".toml.broken-{ts}")
         self._path.rename(backup)

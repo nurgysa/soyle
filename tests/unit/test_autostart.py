@@ -36,3 +36,14 @@ def test_disable_autostart_idempotent() -> None:
     disable_autostart(app_name=APP_KEY)
     disable_autostart(app_name=APP_KEY)
     assert is_autostart_enabled(app_name=APP_KEY) is False
+
+
+def test_enable_autostart_rejects_quote_in_path() -> None:
+    """Defence against registry-quoting injection if caller passes bad input."""
+    with pytest.raises(ValueError):
+        enable_autostart(exe_path=r'C:\evil"\app.exe', app_name=APP_KEY)
+
+
+def test_enable_autostart_rejects_null_in_path() -> None:
+    with pytest.raises(ValueError):
+        enable_autostart(exe_path="C:\\evil\x00.exe", app_name=APP_KEY)

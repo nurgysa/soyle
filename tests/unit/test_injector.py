@@ -190,3 +190,56 @@ def test_inject_blocks_windows_terminal_class(qtbot, mocker) -> None:
 
     assert result.blocked is True
     mock_sendv.assert_not_called()
+
+
+# ---- M1: keystroke method doesn't touch the clipboard ----
+
+def test_keystroke_method_writes_text_without_clipboard(qtbot, mocker) -> None:
+    mock_copy = mocker.patch("whisperflow.core.injector.pyperclip.copy")
+    mocker.patch("whisperflow.core.injector.pyperclip.paste", return_value="secret")
+    mock_sendv = mocker.patch("whisperflow.core.injector.send_ctrl_v")
+    mock_wm = mocker.patch("whisperflow.core.injector.send_wm_paste")
+    mock_write = mocker.patch("whisperflow.core.injector.keyboard.write")
+    mocker.patch("whisperflow.core.injector.get_foreground_hwnd", return_value=1234)
+    mocker.patch(
+        "whisperflow.core.injector.get_window_class_name",
+        return_value="Chrome_WidgetWin_1",
+    )
+
+    injector = Injector(bus=EventBus(), method="keystroke")
+    result = injector.inject("hello", target_hwnd=injector.capture_target())
+
+    assert result.success is True
+    assert result.method == "keystroke"
+    mock_write.assert_called_once_with("hello", delay=0)
+    mock_copy.assert_not_called()          # clipboard untouched
+    mock_sendv.assert_not_called()
+    mock_wm.assert_not_called()
+
+
+def test_keystroke_method_still_honours_terminal_blocklist(qtbot, mocker) -> None:
+    """Newlines typed into a terminal auto-execute just like a paste would."""
+    mock_copy = mocker.patch("whisperflow.core.injector.pyperclip.copy")
+    mock_write = mocker.patch("whisperflow.core.injector.keyboard.write")
+    mocker.patch("whisperflow.core.injector.get_foreground_hwnd", return_value=1234)
+    mocker.patch(
+        "whisperflow.core.injector.get_window_class_name",
+        return_value="ConsoleWindowClass",
+    )
+
+    injector = Injector(bus=EventBus(), method="keystroke")
+    result = injector.inject("rm -rf /\n", target_hwnd=injector.capture_target())
+
+    assert result.blocked is True
+    mock_write.assert_not_called()
+    # Clipboard still receives the text (user can Ctrl+V manually if they
+    # want) — blocklist is the same across both methods.
+    mock_copy.assert_called_once()
+
+
+def test_set_method_rejects_invalid_value() -> None:
+    import pytest
+
+    injector = Injector(bus=EventBus())
+    with pytest.raises(ValueError):
+        injector.set_method("telepathy")
