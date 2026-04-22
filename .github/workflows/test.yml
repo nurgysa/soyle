@@ -28,3 +28,10 @@ jobs:
 
       - name: Pytest (unit only — integration skipped without GPU)
         run: uv run pytest tests/unit/ -v --tb=short
+
+      - name: Security audit — pip-audit
+        # pip-audit queries the PyPA advisory DB for known CVEs in installed
+        # deps. `uvx` runs the tool in an ephemeral venv so it doesn't pollute
+        # the project environment.
+        run: uv pip freeze | uvx pip-audit --requirement /dev/stdin
+        shell: bash

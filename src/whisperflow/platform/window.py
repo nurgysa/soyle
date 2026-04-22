@@ -30,3 +30,18 @@ def refocus(hwnd: int) -> bool:
         return True
     except Exception:
         return False
+
+
+def get_window_class_name(hwnd: int) -> str:
+    """Return the Win32 class name of ``hwnd`` (e.g. 'ConsoleWindowClass').
+
+    Returns an empty string on any failure or non-Windows platforms. The class
+    name is used to apply per-app injection policies — see the terminal
+    blocklist in core/injector.py.
+    """
+    if sys.platform != "win32" or hwnd == 0:
+        return ""
+    try:
+        return str(win32gui.GetClassName(hwnd))
+    except Exception:
+        return ""

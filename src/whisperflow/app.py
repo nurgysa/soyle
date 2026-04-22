@@ -305,13 +305,18 @@ class WhisperFlowApp(QObject):
         self._state.transition(State.POLISHING)
         self._indicator.show_polishing()
         self._state.transition(State.INJECTING)
-        self._injector.inject(text, target_hwnd=self._target_hwnd)
+        inject_result = self._injector.inject(text, target_hwnd=self._target_hwnd)
 
         if not fallback and cost_usd > 0:
             self._usage.record(cost_usd)
             self._refresh_usage_menu()
 
-        if fallback:
+        if inject_result.blocked:
+            self._tray.toast(
+                "WhisperFlow",
+                "Терминал: текст в буфере — вставьте вручную (Ctrl+V)",
+            )
+        elif fallback:
             self._show_fallback_toast(reason)
 
         QTimer.singleShot(200, self._after_inject)
