@@ -33,3 +33,4 @@ Thumbs.db
 *.spec
 *.spec.bak
 diag_recording.wav
+release/
