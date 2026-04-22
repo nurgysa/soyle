@@ -15,10 +15,10 @@ Storage format::
 """
 from __future__ import annotations
 
+import tomllib
 from datetime import UTC, datetime
 from pathlib import Path
 
-import tomli
 import tomli_w
 from platformdirs import user_config_path
 
@@ -47,8 +47,8 @@ class DictionaryStore:
         if not self._path.exists():
             return []
         try:
-            raw = tomli.loads(self._path.read_text(encoding="utf-8"))
-        except tomli.TOMLDecodeError:
+            raw = tomllib.loads(self._path.read_text(encoding="utf-8"))
+        except tomllib.TOMLDecodeError:
             self._backup_broken()
             return []
         terms = raw.get("terms", [])

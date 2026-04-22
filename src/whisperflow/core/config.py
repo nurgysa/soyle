@@ -2,12 +2,12 @@
 from __future__ import annotations
 
 import contextlib
+import tomllib
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
 import keyring
-import tomli
 import tomli_w
 from platformdirs import user_config_path
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -132,9 +132,9 @@ class ConfigStore:
             return cfg
 
         try:
-            raw = tomli.loads(self._path.read_text(encoding="utf-8"))
+            raw = tomllib.loads(self._path.read_text(encoding="utf-8"))
             return Config.model_validate(raw)
-        except (tomli.TOMLDecodeError, ValidationError):
+        except (tomllib.TOMLDecodeError, ValidationError):
             self._backup_broken()
             cfg = Config()
             self._write(cfg)

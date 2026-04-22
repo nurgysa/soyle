@@ -39,6 +39,22 @@ def clean_previous() -> None:
 
 
 def build_cmd() -> list[str]:
+    # Excludes trim ~350 MB of transitive fat: torch (only pulled via
+    # silero-vad which we don't use — recorder.py does RMS-based VAD),
+    # PIL (only used by scripts/generate_icon.py at build time), and
+    # onnxruntime (silero's alternative inference backend).
+    excludes = ("torch", "PIL", "Pillow", "onnxruntime", "silero_vad")
+
+    # `--collect-all` grabs every submodule + data + binary. Needed for:
+    # - `faster_whisper` — audio tokenizer/VAD assets
+    # - `keyring` — backends registered via entry_points, not imported by
+    #   name from our code.
+    # `tomli` is intentionally gone: the stdlib `tomllib` is a drop-in on
+    # Python 3.11+ and avoids tomli's mypyc-compiled module (which lives
+    # at site-packages root as `<hash>__mypyc.pyd` and is a PyInstaller
+    # footgun).
+    collect_all = ("faster_whisper", "keyring")
+
     cmd = [
         sys.executable,
         "-m",
@@ -48,11 +64,11 @@ def build_cmd() -> list[str]:
         f"--icon={SRC / 'assets' / 'icon.ico'}",
         "--name",
         "WhisperFlow",
-        "--collect-all",
-        "faster_whisper",
-        "--collect-all",
-        "silero_vad",
     ]
+    for pkg in collect_all:
+        cmd += ["--collect-all", pkg]
+    for mod in excludes:
+        cmd += ["--exclude-module", mod]
     for src_dir, dest in ADD_DATA:
         if src_dir.is_dir():
             cmd += ["--add-data", f"{src_dir}{SEP}{dest}"]
