@@ -4,11 +4,14 @@ from __future__ import annotations
 import asyncio
 import subprocess
 import sys
+import traceback
+from datetime import UTC, datetime
+from types import TracebackType
 
 import keyboard
 import structlog
 from PySide6.QtCore import QObject, QRunnable, QThreadPool, QTimer, Signal
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QMessageBox
 
 from whisperflow.core.bus import Event, EventBus
 from whisperflow.core.config import ConfigStore, default_config_path
@@ -463,8 +466,100 @@ def _configure_logging() -> None:
     )
 
 
+def _write_crash_report(
+    log_dir,
+    exc_type: type[BaseException],
+    exc_value: BaseException,
+    tb: TracebackType | None,
+):
+    """Write a timestamped crash report. Returns the path on success.
+
+    Kept as a module-level helper so tests can exercise the file-write
+    behaviour without mocking sys.excepthook.
+    """
+    from pathlib import Path
+
+    log_dir = Path(log_dir)
+    log_dir.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now(tz=UTC).strftime("%Y%m%dT%H%M%SZ")
+    crash_path = log_dir / f"crash-{stamp}.log"
+    header = (
+        f"WhisperFlow crash report\n"
+        f"Timestamp:  {stamp}\n"
+        f"Platform:   {sys.platform}\n"
+        f"Python:     {sys.version.splitlines()[0]}\n"
+        f"Executable: {sys.executable}\n"
+        f"Frozen:     {getattr(sys, 'frozen', False)}\n"
+        f"Exception:  {exc_type.__name__}: {exc_value}\n\n"
+    )
+    body = "".join(traceback.format_exception(exc_type, exc_value, tb))
+    crash_path.write_text(header + body, encoding="utf-8")
+    return crash_path
+
+
+def _install_crash_handler() -> None:
+    """Route unhandled exceptions to a timestamped crash log + a user dialog.
+
+    The handler replaces sys.excepthook, which PySide6 routes Qt slot
+    errors through. File-write always runs first (that step never
+    fails gracefully even if Qt is wedged), then best-effort show a
+    QMessageBox with the path — but only if a QApplication exists,
+    otherwise the crash happened before we could build one.
+    """
+    log_dir = default_config_path().parent / "logs"
+
+    def _handler(
+        exc_type: type[BaseException],
+        exc_value: BaseException,
+        tb: TracebackType | None,
+    ) -> None:
+        # Let Ctrl+C propagate normally — it's not a bug, it's a quit.
+        if issubclass(exc_type, KeyboardInterrupt):
+            sys.__excepthook__(exc_type, exc_value, tb)
+            return
+
+        crash_path = None
+        try:
+            crash_path = _write_crash_report(log_dir, exc_type, exc_value, tb)
+            log.error(
+                "unhandled_exception",
+                exc_type=exc_type.__name__,
+                message=str(exc_value),
+                crash_log=str(crash_path),
+            )
+        except Exception:
+            # Never re-raise from a crash handler.
+            pass
+
+        # Best-effort user-visible message. If we crashed before Qt was
+        # up, or from a non-main thread where QMessageBox refuses to
+        # build, just skip.
+        try:
+            qapp = QApplication.instance()
+            if qapp is not None:
+                box = QMessageBox()
+                box.setIcon(QMessageBox.Icon.Critical)
+                box.setWindowTitle("WhisperFlow — непредвиденная ошибка")
+                box.setText(f"{exc_type.__name__}: {exc_value}")
+                info = "Приложите этот файл к багрепорту."
+                if crash_path is not None:
+                    info = f"Лог сохранён:\n{crash_path}\n\n" + info
+                box.setInformativeText(info)
+                box.setStandardButtons(QMessageBox.StandardButton.Ok)
+                box.exec()
+        except Exception:
+            pass
+
+        # Delegate to the default hook so Python's normal exit path
+        # is triggered if this was a main-thread fatal.
+        sys.__excepthook__(exc_type, exc_value, tb)
+
+    sys.excepthook = _handler
+
+
 def main() -> int:
     _configure_logging()
+    _install_crash_handler()
 
     guard = SingleInstance()
     if not guard.acquire():
