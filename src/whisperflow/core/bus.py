@@ -11,6 +11,7 @@ from PySide6.QtCore import QObject, Signal
 class Event(StrEnum):
     HOTKEY_PRESSED = "hotkey.pressed"
     HOTKEY_RELEASED = "hotkey.released"
+    CANCEL_REQUESTED = "cancel.requested"
     RECORDING_STARTED = "recording.started"
     AUDIO_LEVEL = "audio.level"
     RECORDING_STOPPED = "recording.stopped"

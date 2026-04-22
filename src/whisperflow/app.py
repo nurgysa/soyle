@@ -5,6 +5,7 @@ import asyncio
 import subprocess
 import sys
 
+import keyboard
 import structlog
 from PySide6.QtCore import QObject, QRunnable, QThreadPool, QTimer, Signal
 from PySide6.QtWidgets import QApplication
@@ -19,6 +20,7 @@ from whisperflow.core.postprocess import PostProcess
 from whisperflow.core.recorder import Recorder
 from whisperflow.core.state import State, StateMachine
 from whisperflow.core.transcriber import Transcriber
+from whisperflow.core.usage import UsageTracker
 from whisperflow.platform.autostart import (
     disable_autostart,
     enable_autostart,
@@ -49,12 +51,19 @@ class _InferenceJob(QRunnable):
         try:
             transcript = self._transcriber.transcribe(self._audio, sample_rate=self._sr)
             if not transcript.raw_text:
-                self._on_done(transcript.raw_text, True, transcript.language)
+                # No speech — report empty, no polish happened.
+                self._on_done(transcript.raw_text, True, transcript.language, "empty_input", 0.0)
                 return
             polish = asyncio.run(
                 self._postprocess.polish(transcript.raw_text, language=transcript.language)
             )
-            self._on_done(polish.text, polish.fallback, transcript.language)
+            self._on_done(
+                polish.text,
+                polish.fallback,
+                transcript.language,
+                polish.reason,
+                polish.cost_usd,
+            )
         except Exception as exc:
             self._on_error(exc)
 
@@ -64,7 +73,7 @@ class WhisperFlowApp(QObject):
 
     # Cross-thread signals: worker QRunnables cannot reliably use QTimer.singleShot
     # because they have no Qt event loop. Signals use QueuedConnection automatically.
-    _inference_done = Signal(str, bool, str)  # text, fallback, language
+    _inference_done = Signal(str, bool, str, str, float)  # text, fallback, lang, reason, cost
     _inference_error = Signal(str)  # error message
 
     def __init__(self, qapp: QApplication) -> None:
@@ -76,6 +85,13 @@ class WhisperFlowApp(QObject):
         self._store = ConfigStore()
         self._dict_store = DictionaryStore()
         self._cfg = self._store.load()
+        self._usage = UsageTracker(default_config_path().parent / "usage.json")
+        # One-shot guard: show the "bad API key" toast at most once per reload,
+        # to avoid spamming the user on every hotkey release while their key
+        # is invalid. Reset by _reload_config.
+        self._auth_warned = False
+        # Handle to the global Esc hook (registered in start()).
+        self._esc_hook = None
 
         self._indicator = Indicator()
         self._tray = TrayIcon()
@@ -124,11 +140,32 @@ class WhisperFlowApp(QObject):
             self._tray.toast("WhisperFlow", "Не удалось зарегистрировать хоткей. Откройте настройки.")  # noqa: RUF001
             self._show_settings()
 
+        # Esc-to-cancel: register a non-suppressing global hook. The callback
+        # runs on the `keyboard` library's listener thread, so we marshal the
+        # work back to the main thread via the event bus.
+        try:
+            self._esc_hook = keyboard.on_press_key(
+                "esc",
+                lambda _e: self._bus.emit(Event.CANCEL_REQUESTED, {}),
+                suppress=False,
+            )
+        except Exception as exc:
+            log.warning("esc_hook_failed", error=str(exc))
+
+        # Initial usage label refresh.
+        self._refresh_usage_menu()
+
         # Warm up Whisper in background so first transcription is fast
         QTimer.singleShot(250, self._warm_up_transcriber)
 
     def quit(self) -> None:
         self._hotkey.stop()
+        if self._esc_hook is not None:
+            try:
+                keyboard.unhook(self._esc_hook)
+            except Exception:
+                pass
+            self._esc_hook = None
         self._indicator.hide_indicator()
         self._tray.hide()
         self._qapp.quit()
@@ -138,6 +175,7 @@ class WhisperFlowApp(QObject):
     def _wire_events(self) -> None:
         self._bus.subscribe(Event.HOTKEY_PRESSED, self._on_hotkey_pressed)
         self._bus.subscribe(Event.HOTKEY_RELEASED, self._on_hotkey_released)
+        self._bus.subscribe(Event.CANCEL_REQUESTED, self._on_cancel_requested)
 
     def _wire_tray(self) -> None:
         self._tray.settings_requested.connect(self._show_settings)
@@ -152,8 +190,7 @@ class WhisperFlowApp(QObject):
             return
         self._cfg.postprocess.mode = mode  # type: ignore[assignment]
         self._store.save(self._cfg)
-        # Live-update in-memory PostProcess without re-constructing.
-        self._postprocess._config.mode = mode  # type: ignore[assignment]
+        self._postprocess.set_mode(mode)
         self._tray.set_mode(mode)
         label = "Rewrite" if mode == "rewrite" else "Polish"
         self._tray.toast("WhisperFlow", f"Режим LLM: {label}")
@@ -208,25 +245,57 @@ class WhisperFlowApp(QObject):
         )
         QThreadPool.globalInstance().start(job)
 
+    def _on_cancel_requested(self, _: dict) -> None:
+        # Only react while recording; Esc during idle/transcribing is a no-op
+        # so Esc keeps its normal behavior in the foreground app.
+        if self._state.current != State.RECORDING:
+            return
+        try:
+            self._recorder.stop()
+        except Exception as exc:
+            log.warning("cancel_stop_failed", error=str(exc))
+        self._state.reset_to_idle()
+        self._tray.set_recording(False)
+        self._indicator.flash_error("Отменено")
+        log.info("recording_cancelled")
+
     # ---- Inference callbacks (always invoked from worker thread) ----
 
-    def _on_inference_done(self, text: str, fallback: bool, language: str) -> None:
-        log.info(f"on_inference_done chars={len(text)} fallback={fallback}")
+    def _on_inference_done(
+        self, text: str, fallback: bool, language: str, reason: str, cost_usd: float
+    ) -> None:
+        log.info(
+            "on_inference_done",
+            chars=len(text),
+            fallback=fallback,
+            reason=reason,
+            cost_usd=round(cost_usd, 6),
+        )
         # Signal is thread-safe and uses QueuedConnection → handler runs on main thread.
-        self._inference_done.emit(text, fallback, language)
+        self._inference_done.emit(text, fallback, language, reason, cost_usd)
 
     def _on_inference_error(self, exc: Exception) -> None:
-        log.error(f"inference_failed error={exc}")
+        log.error("inference_failed", error=str(exc))
         self._inference_error.emit(str(exc))
 
     def _handle_inference_error(self, _message: str) -> None:
         self._indicator.flash_error("Ошибка распознавания")
         self._state.reset_to_idle()
 
-    def _finish_inference(self, text: str, fallback: bool, _language: str) -> None:
+    def _finish_inference(
+        self,
+        text: str,
+        fallback: bool,
+        _language: str,
+        reason: str,
+        cost_usd: float,
+    ) -> None:
         log.info(
-            f"finish_inference chars={len(text)} fallback={fallback} "
-            f"state={self._state.current}"
+            "finish_inference",
+            chars=len(text),
+            fallback=fallback,
+            reason=reason,
+            state=str(self._state.current),
         )
         if not text.strip():
             self._indicator.flash_error("Ничего не распознано")
@@ -237,9 +306,40 @@ class WhisperFlowApp(QObject):
         self._indicator.show_polishing()
         self._state.transition(State.INJECTING)
         self._injector.inject(text, target_hwnd=self._target_hwnd)
+
+        if not fallback and cost_usd > 0:
+            self._usage.record(cost_usd)
+            self._refresh_usage_menu()
+
         if fallback:
-            self._tray.toast("WhisperFlow", "LLM недоступна — вставлен сырой текст")
+            self._show_fallback_toast(reason)
+
         QTimer.singleShot(200, self._after_inject)
+
+    def _show_fallback_toast(self, reason: str) -> None:
+        """Route per-reason user-facing messages. Auth failures are shown once
+        per config reload to avoid toast spam."""
+        if reason in ("http_401", "http_403"):
+            if not self._auth_warned:
+                self._auth_warned = True
+                self._tray.toast(
+                    "WhisperFlow",
+                    "Проверьте API-ключ OpenRouter в настройках",
+                )
+            return
+        if reason == "http_429":
+            self._tray.toast("WhisperFlow", "OpenRouter: превышен лимит, попробуйте позже")
+            return
+        if reason in ("timeout", "network_error"):
+            self._tray.toast("WhisperFlow", "Сеть недоступна — вставлен сырой текст")
+            return
+        if reason in ("empty_input", "no_api_key"):
+            # Silent: either nothing was said or the user intentionally has no key.
+            return
+        self._tray.toast("WhisperFlow", "LLM недоступна — вставлен сырой текст")
+
+    def _refresh_usage_menu(self) -> None:
+        self._tray.set_usage_text(self._usage.summary_line())
 
     def _after_inject(self) -> None:
         self._indicator.hide_indicator()
@@ -260,16 +360,21 @@ class WhisperFlowApp(QObject):
     def _reload_config(self) -> None:
         self._cfg = self._store.load()
         self._hotkey.rebind(self._cfg.hotkey.combination)
-        # Refresh dictionary-dependent pieces in place (no re-construction needed).
+        # Refresh in place — an in-flight _InferenceJob may still hold
+        # references to these instances, so swapping them would leak state.
         self._transcriber.set_initial_prompt(self._dict_store.as_whisper_prompt())
-        self._postprocess = PostProcess(
+        self._postprocess.reload(
             config=self._cfg.postprocess,
             api_key=self._store.get_api_key(),
             prompt_path=prompt_path(self._cfg.postprocess.prompt_file),
-            dictionary_hint=self._dict_store.as_llm_instruction(),
             rewrite_prompt_path=prompt_path(self._cfg.postprocess.rewrite_prompt_file),
+            dictionary_hint=self._dict_store.as_llm_instruction(),
         )
         self._tray.set_mode(self._cfg.postprocess.mode)
+        # User just saved — give the auth warning another chance if the key
+        # was edited.
+        self._auth_warned = False
+        self._refresh_usage_menu()
         self._sync_autostart()
         self._apply_theme()
         self._tray.toast("WhisperFlow", "Настройки сохранены")

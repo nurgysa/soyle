@@ -40,6 +40,13 @@ class TrayIcon(QObject):
 
         menu.addSeparator()
 
+        # Usage summary — non-interactive, shows today's and monthly cost.
+        self._act_usage = QAction("Расход: $0.0000 (0)", self)
+        self._act_usage.setEnabled(False)
+        menu.addAction(self._act_usage)
+
+        menu.addSeparator()
+
         act_settings = QAction("Настройки…", self)
         act_settings.triggered.connect(self.settings_requested.emit)
         act_logs = QAction("Показать логи", self)
@@ -72,6 +79,10 @@ class TrayIcon(QObject):
 
     def toast(self, title: str, message: str) -> None:
         self._tray.showMessage(title, message, QSystemTrayIcon.MessageIcon.Information, 3000)
+
+    def set_usage_text(self, text: str) -> None:
+        """Update the non-interactive usage label in the tray menu."""
+        self._act_usage.setText(text)
 
     @staticmethod
     def _make_icon(recording: bool) -> QIcon:
