@@ -145,7 +145,13 @@ class SettingsWindow(QMainWindow):
         self._pp_timeout.setValue(self._cfg.postprocess.timeout_seconds)
         layout.addRow("Таймаут (сек):", self._pp_timeout)
 
-        self._pp_api_key = QLineEdit()
+        # Pre-populate from keyring so "Показать" reveals the stored key.
+        # The stored value is kept as `_pp_api_key_original` so we can skip
+        # redundant keyring writes on save (and know when the user actually
+        # edited the field).
+        existing_key = self._store.get_api_key() or ""
+        self._pp_api_key_original = existing_key
+        self._pp_api_key = QLineEdit(existing_key)
         self._pp_api_key.setEchoMode(QLineEdit.EchoMode.Password)
         self._pp_api_key.setPlaceholderText("sk-or-v1-…")
 
@@ -200,6 +206,7 @@ class SettingsWindow(QMainWindow):
             return
         self._store.clear_api_key()
         self._pp_api_key.clear()
+        self._pp_api_key_original = ""
         self._refresh_key_status()
 
     def _refresh_key_status(self) -> None:
@@ -354,10 +361,11 @@ class SettingsWindow(QMainWindow):
         self._cfg.postprocess.timeout_seconds = self._pp_timeout.value()
 
         new_key = self._pp_api_key.text().strip()
-        if new_key:
+        if new_key and new_key != self._pp_api_key_original:
             self._store.set_api_key(new_key)
-            self._pp_api_key.clear()
-            # Force show-toggle back off so the next open doesn't leak.
+            self._pp_api_key_original = new_key
+            # Force show-toggle back off so the dialog doesn't leak the key
+            # next time it's opened.
             if self._pp_show_key_btn.isChecked():
                 self._pp_show_key_btn.setChecked(False)
             self._refresh_key_status()
