@@ -140,3 +140,69 @@ async def test_polish_fallback_without_api_key(
     result = await pp.polish(raw, language="en")
     assert result.fallback is True
     assert result.text == raw
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_mode_polish_uses_polish_prompt(
+    tmp_path: Path, pp_config: PostProcessConfig
+) -> None:
+    polish_path = tmp_path / "polish.md"
+    polish_path.write_text("POLISH-INSTRUCTIONS", encoding="utf-8")
+    rewrite_path = tmp_path / "rewrite.md"
+    rewrite_path.write_text("REWRITE-INSTRUCTIONS", encoding="utf-8")
+
+    seen: dict[str, str] = {}
+
+    def capture(request: httpx.Request) -> httpx.Response:
+        import json as _json
+
+        body = _json.loads(request.content)
+        seen["system"] = body["messages"][0]["content"]
+        return _ok_response("cleaned")
+
+    respx.post(API_URL).mock(side_effect=capture)
+
+    pp_config.mode = "polish"
+    pp = PostProcess(
+        config=pp_config,
+        api_key="sk-test",
+        prompt_path=polish_path,
+        rewrite_prompt_path=rewrite_path,
+    )
+    await pp.polish("raw text", language="en")
+    assert "POLISH-INSTRUCTIONS" in seen["system"]
+    assert "REWRITE-INSTRUCTIONS" not in seen["system"]
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_mode_rewrite_uses_rewrite_prompt(
+    tmp_path: Path, pp_config: PostProcessConfig
+) -> None:
+    polish_path = tmp_path / "polish.md"
+    polish_path.write_text("POLISH-INSTRUCTIONS", encoding="utf-8")
+    rewrite_path = tmp_path / "rewrite.md"
+    rewrite_path.write_text("REWRITE-INSTRUCTIONS", encoding="utf-8")
+
+    seen: dict[str, str] = {}
+
+    def capture(request: httpx.Request) -> httpx.Response:
+        import json as _json
+
+        body = _json.loads(request.content)
+        seen["system"] = body["messages"][0]["content"]
+        return _ok_response("rewritten")
+
+    respx.post(API_URL).mock(side_effect=capture)
+
+    pp_config.mode = "rewrite"
+    pp = PostProcess(
+        config=pp_config,
+        api_key="sk-test",
+        prompt_path=polish_path,
+        rewrite_prompt_path=rewrite_path,
+    )
+    await pp.polish("raw text", language="en")
+    assert "REWRITE-INSTRUCTIONS" in seen["system"]
+    assert "POLISH-INSTRUCTIONS" not in seen["system"]

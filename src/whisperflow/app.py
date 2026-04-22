@@ -95,6 +95,7 @@ class WhisperFlowApp(QObject):
             api_key=self._store.get_api_key(),
             prompt_path=prompt_path(self._cfg.postprocess.prompt_file),
             dictionary_hint=self._dict_store.as_llm_instruction(),
+            rewrite_prompt_path=prompt_path(self._cfg.postprocess.rewrite_prompt_file),
         )
         self._hotkey = HotkeyBox(
             bus=self._bus,
@@ -142,6 +143,20 @@ class WhisperFlowApp(QObject):
         self._tray.settings_requested.connect(self._show_settings)
         self._tray.logs_requested.connect(self._open_logs)
         self._tray.quit_requested.connect(self.quit)
+        self._tray.mode_changed.connect(self._on_mode_changed)
+        # Reflect persisted mode in the submenu immediately.
+        self._tray.set_mode(self._cfg.postprocess.mode)
+
+    def _on_mode_changed(self, mode: str) -> None:
+        if mode not in ("polish", "rewrite"):
+            return
+        self._cfg.postprocess.mode = mode  # type: ignore[assignment]
+        self._store.save(self._cfg)
+        # Live-update in-memory PostProcess without re-constructing.
+        self._postprocess._config.mode = mode  # type: ignore[assignment]
+        self._tray.set_mode(mode)
+        label = "Rewrite" if mode == "rewrite" else "Polish"
+        self._tray.toast("WhisperFlow", f"Режим LLM: {label}")
 
     # ---- Hotkey handlers ----
 
@@ -252,7 +267,9 @@ class WhisperFlowApp(QObject):
             api_key=self._store.get_api_key(),
             prompt_path=prompt_path(self._cfg.postprocess.prompt_file),
             dictionary_hint=self._dict_store.as_llm_instruction(),
+            rewrite_prompt_path=prompt_path(self._cfg.postprocess.rewrite_prompt_file),
         )
+        self._tray.set_mode(self._cfg.postprocess.mode)
         self._sync_autostart()
         self._apply_theme()
         self._tray.toast("WhisperFlow", "Настройки сохранены")

@@ -64,6 +64,12 @@ class PostProcessConfig(BaseModel):
     retries: int = Field(default=3, ge=0, le=10)
     temperature: float = Field(default=0.0, ge=0, le=2)
     prompt_file: str = "polish_v1.md"
+    # Two LLM modes:
+    #   - 'polish'  : conservative — strip fillers, fix punctuation, keep structure
+    #   - 'rewrite' : active       — reformulate into a well-formed sentence
+    # Each mode loads its own prompt file from prompts/.
+    mode: Literal["polish", "rewrite"] = "polish"
+    rewrite_prompt_file: str = "rewrite_v1.md"
 
 
 class UIConfig(BaseModel):

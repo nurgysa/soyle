@@ -52,12 +52,18 @@ class PostProcess:
         api_key: str | None,
         prompt_path: Path,
         dictionary_hint: str = "",
+        rewrite_prompt_path: Path | None = None,
     ) -> None:
         self._config = config
         self._api_key = api_key
-        self._base_prompt = (
+        self._polish_prompt = (
             prompt_path.read_text(encoding="utf-8") if prompt_path.exists() else ""
         )
+        if rewrite_prompt_path is not None and rewrite_prompt_path.exists():
+            self._rewrite_prompt = rewrite_prompt_path.read_text(encoding="utf-8")
+        else:
+            # Fallback: if rewrite prompt missing, rewrite mode behaves like polish.
+            self._rewrite_prompt = self._polish_prompt
         self._dictionary_hint = dictionary_hint
 
     def set_dictionary_hint(self, hint: str) -> None:
@@ -65,10 +71,15 @@ class PostProcess:
         self._dictionary_hint = hint
 
     @property
+    def _base_prompt(self) -> str:
+        return self._rewrite_prompt if self._config.mode == "rewrite" else self._polish_prompt
+
+    @property
     def _system_prompt(self) -> str:
+        base = self._base_prompt
         if not self._dictionary_hint:
-            return self._base_prompt
-        return f"{self._base_prompt}\n\nADDITIONAL GLOSSARY:\n{self._dictionary_hint}"
+            return base
+        return f"{base}\n\nADDITIONAL GLOSSARY:\n{self._dictionary_hint}"
 
     async def polish(self, raw_text: str, language: str) -> PolishResult:
         if not self._api_key or not raw_text.strip():

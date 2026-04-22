@@ -118,6 +118,14 @@ class SettingsWindow(QMainWindow):
         self._pp_enabled = QCheckBox("Включить постобработку LLM")
         self._pp_enabled.setChecked(self._cfg.postprocess.enabled)
         layout.addRow(self._pp_enabled)
+
+        self._pp_mode = QComboBox()
+        self._pp_mode.addItem("Polish — чистка, пунктуация, без переформулирования", "polish")
+        self._pp_mode.addItem("Rewrite — активная переформулировка в связный текст", "rewrite")
+        idx = self._pp_mode.findData(self._cfg.postprocess.mode)
+        self._pp_mode.setCurrentIndex(max(0, idx))
+        layout.addRow("Режим:", self._pp_mode)
+
         self._pp_model = QLineEdit(self._cfg.postprocess.model)
         layout.addRow("Модель:", self._pp_model)
         self._pp_timeout = QDoubleSpinBox()
@@ -233,6 +241,7 @@ class SettingsWindow(QMainWindow):
         self._cfg.whisper.compute_type = self._w_compute.currentText()  # type: ignore[assignment]
 
         self._cfg.postprocess.enabled = self._pp_enabled.isChecked()
+        self._cfg.postprocess.mode = self._pp_mode.currentData()  # type: ignore[assignment]
         self._cfg.postprocess.model = self._pp_model.text().strip()
         self._cfg.postprocess.timeout_seconds = self._pp_timeout.value()
 
