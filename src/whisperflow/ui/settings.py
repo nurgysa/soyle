@@ -23,6 +23,25 @@ from PySide6.QtWidgets import (
 from whisperflow.core.config import Config, ConfigStore
 from whisperflow.core.dictionary import DictionaryStore
 from whisperflow.core.postprocess import POPULAR_MODELS
+from whisperflow.ui.shortcut_capture import ShortcutCaptureDialog
+
+# Curated list of known-good push-to-talk keys. Editable combobox
+# falls back to arbitrary string input for anything not listed.
+HOTKEY_PRESETS = (
+    "right alt",
+    "right ctrl",
+    "right shift",
+    "caps lock",
+    "scroll lock",
+    "pause",
+    "f6",
+    "f7",
+    "f8",
+    "f9",
+    "f10",
+    "f11",
+    "f12",
+)
 
 
 class SettingsWindow(QMainWindow):
@@ -73,8 +92,33 @@ class SettingsWindow(QMainWindow):
     def _build_hotkey_tab(self) -> QWidget:
         w = QWidget()
         layout = QFormLayout(w)
-        self._hk_combination = QLineEdit(self._cfg.hotkey.combination)
-        layout.addRow("Клавиша:", self._hk_combination)
+
+        # Editable combobox: curated presets + arbitrary user input.
+        # `keyboard.hook_key` requires a single key (not a combo), so
+        # presets are the single keys we've verified behave well for PTT.
+        self._hk_combination = QComboBox()
+        self._hk_combination.setEditable(True)
+        for preset in HOTKEY_PRESETS:
+            self._hk_combination.addItem(preset)
+        current = self._cfg.hotkey.combination
+        idx = self._hk_combination.findText(current)
+        if idx >= 0:
+            self._hk_combination.setCurrentIndex(idx)
+        else:
+            self._hk_combination.setEditText(current)
+
+        # "Записать…" opens a capture dialog that detects the pressed
+        # key — saves the user from guessing the exact string format.
+        self._hk_capture_btn = QPushButton("Записать…")
+        self._hk_capture_btn.setFixedWidth(100)
+        self._hk_capture_btn.setToolTip("Нажать клавишу и распознать её автоматически")
+        self._hk_capture_btn.clicked.connect(self._capture_hotkey_clicked)
+
+        hotkey_row = QHBoxLayout()
+        hotkey_row.addWidget(self._hk_combination, 1)
+        hotkey_row.addWidget(self._hk_capture_btn)
+        layout.addRow("Клавиша:", hotkey_row)
+
         self._hk_mode = QComboBox()
         self._hk_mode.addItems(["push_to_talk", "toggle"])
         self._hk_mode.setCurrentText(self._cfg.hotkey.mode)
@@ -84,6 +128,18 @@ class SettingsWindow(QMainWindow):
         self._hk_debounce.setValue(self._cfg.hotkey.debounce_ms)
         layout.addRow("Debounce (мс):", self._hk_debounce)
         return w
+
+    def _capture_hotkey_clicked(self) -> None:
+        dlg = ShortcutCaptureDialog(self)
+        if dlg.exec() and dlg.captured:
+            captured = dlg.captured
+            # If the captured key matches a preset, select it in the
+            # combobox; otherwise fall back to free-text.
+            idx = self._hk_combination.findText(captured)
+            if idx >= 0:
+                self._hk_combination.setCurrentIndex(idx)
+            else:
+                self._hk_combination.setEditText(captured)
 
     def _build_audio_tab(self) -> QWidget:
         w = QWidget()
@@ -359,7 +415,7 @@ class SettingsWindow(QMainWindow):
     # ---- Save ----
 
     def _save(self) -> None:
-        self._cfg.hotkey.combination = self._hk_combination.text().strip()
+        self._cfg.hotkey.combination = self._hk_combination.currentText().strip()
         self._cfg.hotkey.mode = self._hk_mode.currentText()  # type: ignore[assignment]
         self._cfg.hotkey.debounce_ms = self._hk_debounce.value()
 
