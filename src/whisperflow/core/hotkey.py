@@ -9,6 +9,44 @@ import keyboard
 
 from whisperflow.core.bus import Event, EventBus
 
+# All modifier families the `keyboard` library's is_pressed() recognises.
+_MODIFIER_FAMILIES = ("ctrl", "alt", "shift", "windows")
+
+
+def _ptt_modifier_family(ptt: str) -> str | None:
+    """Return the modifier family name the PTT belongs to, or None.
+
+    Examples: "right alt" → "alt", "left ctrl" → "ctrl", "f8" → None.
+    Used so the interference check doesn't flag the PTT's own modifier.
+    """
+    low = ptt.lower()
+    for fam in _MODIFIER_FAMILIES:
+        if fam in low:
+            return fam
+    return None
+
+
+def is_interfering_modifier_held(ptt: str) -> bool:
+    """True if a modifier OTHER than the PTT's own family is currently held.
+
+    Purpose: suppress accidental PTT activations when the user is in the
+    middle of a keyboard-layout switch or another system shortcut
+    (Alt+Shift, Ctrl+Shift, Ctrl+Alt, Win+Space, etc.). The PTT's own
+    family is excluded — otherwise PTT="right ctrl" would block itself.
+    """
+    own = _ptt_modifier_family(ptt)
+    for fam in _MODIFIER_FAMILIES:
+        if fam == own:
+            continue
+        try:
+            if keyboard.is_pressed(fam):
+                return True
+        except Exception:
+            # keyboard.is_pressed can throw on some exotic platforms; we
+            # fail open rather than soft-locking the hotkey out.
+            pass
+    return False
+
 
 class DebounceFilter:
     """Decides whether a press/release should be accepted based on timing."""
@@ -54,6 +92,13 @@ class HotkeyBox:
             with self._lock:
                 if event.event_type == keyboard.KEY_DOWN:
                     if self._is_pressed:
+                        return
+                    # Guard against accidental triggers during OS keyboard
+                    # shortcuts like Alt+Shift / Ctrl+Shift (layout switch),
+                    # Ctrl+Alt (various combos), Win+Space, etc. Release
+                    # handler already early-returns when _is_pressed is
+                    # False, so a matching KEY_UP later won't fire either.
+                    if is_interfering_modifier_held(self._combination):
                         return
                     if self._filter.accept_press():
                         self._is_pressed = True
