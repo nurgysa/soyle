@@ -440,10 +440,16 @@ class WhisperFlowApp(QObject):
     def _apply_theme(self) -> None:
         theme = self._cfg.ui.theme
         if theme == "system":
+            # Clear any previously-applied stylesheet — otherwise switching
+            # dark/light → system would leave the old theme stuck.
+            self._qapp.setStyleSheet("")
             return
         qss = qss_path(theme)
-        if qss.exists():
-            self._qapp.setStyleSheet(qss.read_text(encoding="utf-8"))
+        if not qss.exists():
+            log.warning("theme_file_missing", theme=theme, path=str(qss))
+            self._qapp.setStyleSheet("")
+            return
+        self._qapp.setStyleSheet(qss.read_text(encoding="utf-8"))
 
     def _warm_up_transcriber(self) -> None:
         try:
