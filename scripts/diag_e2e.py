@@ -17,10 +17,10 @@ from pathlib import Path
 import numpy as np
 import sounddevice as sd
 
-from whisperflow.core.config import ConfigStore
-from whisperflow.core.postprocess import PostProcess
-from whisperflow.core.transcriber import Transcriber
-from whisperflow.ui.resources import prompt_path
+from soyle.core.config import ConfigStore
+from soyle.core.postprocess import PostProcess
+from soyle.core.transcriber import Transcriber
+from soyle.ui.resources import prompt_path
 
 
 def banner(msg: str) -> None:

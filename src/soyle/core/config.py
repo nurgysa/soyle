@@ -106,12 +106,16 @@ class Config(BaseModel):
     behavior: BehaviorConfig = Field(default_factory=BehaviorConfig)
 
 
-APP_NAME = "WhisperFlow"
+# Two names because of the umlaut: APP_NAME is the user-facing brand,
+# APP_SLUG is the ASCII filesystem-safe form used for paths and any place
+# CLI tooling (cd, gpresult, dir) might trip on a non-ASCII path.
+APP_NAME = "Söyle"
+APP_SLUG = "Soyle"
 
 
 def default_config_path() -> Path:
-    """Return %APPDATA%\\WhisperFlow\\config.toml on Windows."""
-    return user_config_path(APP_NAME, appauthor=False, roaming=True) / "config.toml"
+    """Return %APPDATA%\\Soyle\\config.toml on Windows."""
+    return user_config_path(APP_SLUG, appauthor=False, roaming=True) / "config.toml"
 
 
 class ConfigStore:

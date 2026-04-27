@@ -10,7 +10,7 @@ from pathlib import Path
 import httpx
 import structlog
 
-from whisperflow.core.config import PostProcessConfig
+from soyle.core.config import PostProcessConfig
 
 log = structlog.get_logger()
 
@@ -194,8 +194,10 @@ class PostProcess:
         headers = {
             "Authorization": f"Bearer {self._api_key}",
             "Content-Type": "application/json",
-            "HTTP-Referer": "https://github.com/nurgisa/whisperflow",
-            "X-Title": "WhisperFlow",
+            "HTTP-Referer": "https://github.com/nurgisa/soyle",
+            # ASCII-only — HTTP headers per RFC 7230 forbid non-latin-1 bytes,
+            # and httpx enforces ASCII. Keep the umlaut for UI strings only.
+            "X-Title": "Soyle",
         }
 
         start = time.monotonic()

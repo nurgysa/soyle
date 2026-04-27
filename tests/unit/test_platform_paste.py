@@ -8,7 +8,7 @@ import pytest
 if sys.platform != "win32":
     pytest.skip("Windows-only", allow_module_level=True)
 
-from whisperflow.platform import paste as paste_mod
+from soyle.platform import paste as paste_mod
 
 
 def test_send_ctrl_v_calls_keyboard(mocker) -> None:

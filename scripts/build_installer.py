@@ -1,9 +1,9 @@
-"""Build the Windows installer (`WhisperFlow-Setup-<version>.exe`).
+"""Build the Windows installer (`Söyle-Setup-<version>.exe`).
 
 Pipeline:
     pyproject.toml  →  version string
-    build_exe.py    →  dist/WhisperFlow/           (if missing or --rebuild)
-    iscc            →  release/WhisperFlow-Setup-<version>.exe
+    build_exe.py    →  dist/Soyle/           (if missing or --rebuild)
+    iscc            →  release/Söyle-Setup-<version>.exe
 
 Inno Setup 6 must be installed; the script searches the usual paths.
 If you installed it elsewhere, set INNOSETUP_ISCC env var to the full
@@ -24,7 +24,7 @@ import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-DIST = ROOT / "dist" / "WhisperFlow"
+DIST = ROOT / "dist" / "Söyle"
 RELEASE = ROOT / "release"
 ISS = ROOT / "installer" / "installer.iss"
 
@@ -59,7 +59,7 @@ def find_iscc() -> Path:
 
 
 def run_pyinstaller() -> None:
-    """Produce dist/WhisperFlow/ via the existing build_exe.py."""
+    """Produce dist/Soyle/ via the existing build_exe.py."""
     cmd = [sys.executable, str(ROOT / "scripts" / "build_exe.py")]
     result = subprocess.run(cmd, cwd=ROOT, check=False)
     if result.returncode != 0:
@@ -80,12 +80,12 @@ def main() -> int:
     parser.add_argument(
         "--rebuild",
         action="store_true",
-        help="Re-run PyInstaller even if dist/WhisperFlow already exists.",
+        help="Re-run PyInstaller even if dist/Soyle already exists.",
     )
     args = parser.parse_args()
 
     version = read_version()
-    print(f"WhisperFlow {version}")
+    print(f"Söyle {version}")
 
     if args.rebuild or not DIST.is_dir():
         print("Running PyInstaller…")
@@ -97,7 +97,7 @@ def main() -> int:
     print(f"Using iscc at: {iscc}")
     run_iscc(iscc, version)
 
-    installer = RELEASE / f"WhisperFlow-Setup-{version}.exe"
+    installer = RELEASE / f"Söyle-Setup-{version}.exe"
     if installer.is_file():
         size_mb = installer.stat().st_size / 1_048_576
         print(f"\nInstaller: {installer} ({size_mb:.1f} MB)")

@@ -9,7 +9,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from whisperflow.core.transcriber import Transcriber
+from soyle.core.transcriber import Transcriber
 
 pytestmark = pytest.mark.gpu
 

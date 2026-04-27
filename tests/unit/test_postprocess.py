@@ -7,8 +7,8 @@ import httpx
 import pytest
 import respx
 
-from whisperflow.core.config import PostProcessConfig
-from whisperflow.core.postprocess import (
+from soyle.core.config import PostProcessConfig
+from soyle.core.postprocess import (
     POPULAR_MODELS,
     ModelPreset,
     PostProcess,

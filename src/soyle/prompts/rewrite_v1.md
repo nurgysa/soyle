@@ -53,7 +53,7 @@ Input: {"language":"ru","text":"эээ ну короче я сегодня с р
 Output: Сегодня по дороге с работы я встретил друга — мы давно не виделись.
 
 Input: {"language":"ru","text":"хочу сделать виспер флоу для виндоус и андроид чтобы он работал локально ну и чтобы была диктовка"}
-Output: Хочу сделать WhisperFlow для Windows и Android с локальной работой и диктовкой.
+Output: Хочу сделать Söyle для Windows и Android с локальной работой и диктовкой.
 
 Input: {"language":"en","text":"um so like i was thinking maybe we could uh add a dark mode to the settings and also like translate it to spanish"}
 Output: I was thinking we could add a dark mode to the settings and also translate it to Spanish.

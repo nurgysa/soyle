@@ -17,7 +17,7 @@ import numpy as np
 import structlog
 from faster_whisper import WhisperModel
 
-from whisperflow.core.errors import CudaOOMError, CudaUnavailableError, ModelNotLoadedError
+from soyle.core.errors import CudaOOMError, CudaUnavailableError, ModelNotLoadedError
 
 _log = structlog.get_logger(__name__)
 

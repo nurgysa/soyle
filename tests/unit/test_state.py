@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from whisperflow.core.state import State, StateMachine
+from soyle.core.state import State, StateMachine
 
 
 def test_initial_state_is_idle() -> None:

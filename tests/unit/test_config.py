@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from whisperflow.core.config import (
+from soyle.core.config import (
     AudioConfig,
     BehaviorConfig,
     Config,
@@ -156,12 +156,12 @@ def test_configstore_rejects_unknown_field(tmp_path: Path) -> None:
 
 
 def test_set_and_get_api_key(mocker) -> None:
-    mock_keyring = mocker.patch("whisperflow.core.config.keyring")
+    mock_keyring = mocker.patch("soyle.core.config.keyring")
     store = ConfigStore(config_path=Path("/tmp/doesnt_matter"))
 
     store.set_api_key("sk-or-v1-abcdef")
     mock_keyring.set_password.assert_called_once_with(
-        "WhisperFlow", "openrouter", "sk-or-v1-abcdef"
+        "Söyle", "openrouter", "sk-or-v1-abcdef"
     )
 
     mock_keyring.get_password.return_value = "sk-or-v1-abcdef"
@@ -169,7 +169,7 @@ def test_set_and_get_api_key(mocker) -> None:
 
 
 def test_get_api_key_returns_none_when_missing(mocker) -> None:
-    mock_keyring = mocker.patch("whisperflow.core.config.keyring")
+    mock_keyring = mocker.patch("soyle.core.config.keyring")
     mock_keyring.get_password.return_value = None
 
     store = ConfigStore(config_path=Path("/tmp/doesnt_matter"))
@@ -177,8 +177,8 @@ def test_get_api_key_returns_none_when_missing(mocker) -> None:
 
 
 def test_clear_api_key(mocker) -> None:
-    mock_keyring = mocker.patch("whisperflow.core.config.keyring")
+    mock_keyring = mocker.patch("soyle.core.config.keyring")
     store = ConfigStore(config_path=Path("/tmp/doesnt_matter"))
 
     store.clear_api_key()
-    mock_keyring.delete_password.assert_called_once_with("WhisperFlow", "openrouter")
+    mock_keyring.delete_password.assert_called_once_with("Söyle", "openrouter")

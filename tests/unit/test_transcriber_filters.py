@@ -1,7 +1,7 @@
 """Tests for Transcriber's pure text-post-processing helpers."""
 from __future__ import annotations
 
-from whisperflow.core.transcriber import filter_hallucinations, normalize_whitespace
+from soyle.core.transcriber import filter_hallucinations, normalize_whitespace
 
 
 def test_normalize_whitespace_collapses_spaces() -> None:

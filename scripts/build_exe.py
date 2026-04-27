@@ -1,9 +1,9 @@
-"""Build WhisperFlow.exe via PyInstaller.
+"""Build Soyle.exe via PyInstaller.
 
 Run from the project root:
     uv run --extra build python scripts/build_exe.py
 
-Produces dist/WhisperFlow/WhisperFlow.exe. The Whisper model is downloaded
+Produces dist/Soyle/Soyle.exe. The Whisper model is downloaded
 on first run (not bundled) to keep the installer under 500 MB.
 """
 from __future__ import annotations
@@ -14,10 +14,10 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-SRC = ROOT / "src" / "whisperflow"
+SRC = ROOT / "src" / "soyle"
 DIST = ROOT / "dist"
 BUILD = ROOT / "build"
-SPEC = ROOT / "WhisperFlow.spec"
+SPEC = ROOT / "Soyle.spec"
 
 SEP = ";" if sys.platform == "win32" else ":"
 
@@ -65,7 +65,7 @@ def build_cmd() -> list[str]:
         "--windowed",
         f"--icon={SRC / 'assets' / 'icon.ico'}",
         "--name",
-        "WhisperFlow",
+        "Söyle",
     ]
     for pkg in collect_all:
         cmd += ["--collect-all", pkg]
@@ -89,7 +89,7 @@ def main() -> int:
     if result.returncode != 0:
         return result.returncode
 
-    exe = DIST / "WhisperFlow" / "WhisperFlow.exe"
+    exe = DIST / "Söyle" / "Soyle.exe"
     print(f"\nBuild artifact: {exe}")
     print(f"Exists: {exe.exists()}")
     return 0

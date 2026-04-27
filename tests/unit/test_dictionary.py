@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from whisperflow.core.dictionary import MAX_TERMS, DictionaryStore
+from soyle.core.dictionary import MAX_TERMS, DictionaryStore
 
 
 @pytest.fixture
@@ -20,23 +20,23 @@ def test_empty_when_missing(store: DictionaryStore) -> None:
 
 
 def test_add_and_persist(store: DictionaryStore) -> None:
-    store.add("WhisperFlow")
+    store.add("Söyle")
     store.add("OpenRouter")
-    assert store.load() == ["WhisperFlow", "OpenRouter"]
+    assert store.load() == ["Söyle", "OpenRouter"]
     # file persists across instances
     reloaded = DictionaryStore(path=store.path).load()
-    assert reloaded == ["WhisperFlow", "OpenRouter"]
+    assert reloaded == ["Söyle", "OpenRouter"]
 
 
 def test_add_dedupes_case_insensitively(store: DictionaryStore) -> None:
-    store.add("WhisperFlow")
-    store.add("whisperflow")  # duplicate by casefold
-    assert store.load() == ["WhisperFlow"]
+    store.add("Söyle")
+    store.add("soyle")  # duplicate by casefold
+    assert store.load() == ["Söyle"]
 
 
 def test_add_strips_whitespace(store: DictionaryStore) -> None:
-    store.add("  WhisperFlow  ")
-    assert store.load() == ["WhisperFlow"]
+    store.add("  Söyle  ")
+    assert store.load() == ["Söyle"]
 
 
 def test_add_ignores_empty(store: DictionaryStore) -> None:
@@ -78,19 +78,19 @@ def test_broken_file_recovered(tmp_path: Path) -> None:
 
 
 def test_whisper_prompt_format(store: DictionaryStore) -> None:
-    store.save(["WhisperFlow", "OpenRouter", "Astana"])
+    store.save(["Söyle", "OpenRouter", "Astana"])
     prompt = store.as_whisper_prompt()
     assert prompt.startswith("Glossary:")
-    assert "WhisperFlow" in prompt
+    assert "Söyle" in prompt
     assert "OpenRouter" in prompt
     assert "Astana" in prompt
 
 
 def test_llm_instruction_format(store: DictionaryStore) -> None:
-    store.save(["WhisperFlow", "Astana"])
+    store.save(["Söyle", "Astana"])
     instr = store.as_llm_instruction()
     assert "verbatim" in instr.lower()
-    assert "WhisperFlow" in instr
+    assert "Söyle" in instr
     assert "Astana" in instr
 
 

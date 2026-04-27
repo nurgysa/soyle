@@ -1,4 +1,4 @@
-"""Tests for the monthly-spend-limit warning logic in WhisperFlowApp.
+"""Tests for the monthly-spend-limit warning logic in SoyleApp.
 
 We don't boot the full Qt app here — just exercise the pure policy by
 faking the pieces `_check_monthly_limit` touches (config, usage tracker,
@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from whisperflow.core.usage import UsageTracker
+from soyle.core.usage import UsageTracker
 
 
 @dataclass
@@ -32,7 +32,7 @@ class _FakeTray:
 
 
 def _make_checker(cfg: _FakeCfg, usage: UsageTracker, tray: _FakeTray) -> Any:
-    """Build a minimal callable mirroring WhisperFlowApp._check_monthly_limit.
+    """Build a minimal callable mirroring SoyleApp._check_monthly_limit.
 
     Done this way so the policy is exercised as a pure function rather than
     requiring Qt boot. If the real method ever grows, mirror it here too.
@@ -46,7 +46,7 @@ def _make_checker(cfg: _FakeCfg, usage: UsageTracker, tray: _FakeTray) -> Any:
         previous = current - new_cost
         if previous < limit <= current:
             tray.toast(
-                "WhisperFlow",
+                "Söyle",
                 f"Месячный лимит превышен: ${current:.4f} из ${limit:.2f}",
                 level="warning",
             )

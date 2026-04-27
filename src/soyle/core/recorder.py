@@ -12,8 +12,8 @@ from typing import Any
 import numpy as np
 import sounddevice as sd
 
-from whisperflow.core.bus import Event, EventBus
-from whisperflow.core.errors import AudioDeviceError
+from soyle.core.bus import Event, EventBus
+from soyle.core.errors import AudioDeviceError
 
 
 def compute_rms(audio: np.ndarray) -> float:

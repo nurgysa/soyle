@@ -1,11 +1,11 @@
 [project]
-name = "whisperflow"
+name = "soyle"
 version = "1.0.0"
-description = "Local Windows push-to-talk dictation with Whisper + LLM polish"
+description = "Söyle — local Windows + Android push-to-talk dictation with Whisper and LLM polish (Kazakh / Russian / English code-switching)"
 requires-python = ">=3.12,<3.13"
 readme = "README.md"
 license = { text = "MIT" }
-authors = [{ name = "nurgisa" }]
+authors = [{ name = "Nurgisa Andasbek", email = "andasbek.nurgysa@gmail.com" }]
 
 dependencies = [
   "pyside6>=6.8.0",
@@ -45,14 +45,19 @@ gpu = [
 ]
 
 [project.scripts]
-whisperflow = "whisperflow.app:main"
+soyle = "soyle.app:main"
+
+[project.urls]
+Homepage = "https://github.com/nurgisa/soyle"
+Issues = "https://github.com/nurgisa/soyle/issues"
+Changelog = "https://github.com/nurgisa/soyle/blob/main/CHANGELOG.md"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/whisperflow"]
+packages = ["src/soyle"]
 
 [tool.ruff]
 line-length = 100

@@ -12,7 +12,7 @@ Run this checklist before each release. Do NOT release if anything fails.
 
 - [ ] `uv sync --extra dev --extra gpu` completes without errors
 - [ ] `uv run python scripts/download_model.py --model small` completes
-- [ ] `uv run whisperflow` launches; console blocks (event loop running)
+- [ ] `uv run soyle` launches; console blocks (event loop running)
 - [ ] Tray icon appears in system tray within 10 seconds of launch
 
 ## Core flow

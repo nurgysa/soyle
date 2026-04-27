@@ -1,6 +1,6 @@
 """Lightweight daily usage tracker: accumulates LLM cost in a JSON file.
 
-Stored at `%APPDATA%/WhisperFlow/usage.json` as a flat dict keyed by
+Stored at `%APPDATA%/Soyle/usage.json` as a flat dict keyed by
 ISO date (YYYY-MM-DD). Each entry carries the day's aggregate cost and
 request count. Entries older than 45 days are trimmed on save so the
 file stays bounded.

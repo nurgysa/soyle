@@ -8,7 +8,7 @@ import pytest
 if sys.platform != "win32":
     pytest.skip("Windows-only", allow_module_level=True)
 
-from whisperflow.platform.window import get_foreground_hwnd, is_same_window
+from soyle.platform.window import get_foreground_hwnd, is_same_window
 
 
 def test_get_foreground_hwnd_returns_int() -> None:

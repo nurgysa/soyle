@@ -1,6 +1,6 @@
 """Verify CUDA runtime libraries for GPU inference on Windows.
 
-WhisperFlow now uses NVIDIA pip wheels (nvidia-cublas-cu12, nvidia-cudnn-cu12)
+Söyle now uses NVIDIA pip wheels (nvidia-cublas-cu12, nvidia-cudnn-cu12)
 which are installed automatically via ``uv sync --extra gpu``. This script
 verifies those wheels are present and their DLL directories are on the
 search path.

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from whisperflow.app import _write_crash_report
+from soyle.app import _write_crash_report
 
 
 def _raise_and_capture() -> tuple[type[BaseException], BaseException, object]:
@@ -27,7 +27,7 @@ def test_crash_report_includes_exception_and_traceback(tmp_path: Path) -> None:
     assert "ValueError" in content
     assert "something went wrong in the pipeline" in content
     assert "Traceback" in content
-    assert "WhisperFlow crash report" in content
+    assert "Söyle crash report" in content
 
 
 def test_crash_report_creates_log_dir(tmp_path: Path) -> None:

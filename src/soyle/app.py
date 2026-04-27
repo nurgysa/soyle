@@ -13,26 +13,26 @@ import structlog
 from PySide6.QtCore import QObject, QRunnable, QThreadPool, QTimer, Signal
 from PySide6.QtWidgets import QApplication, QMessageBox
 
-from whisperflow.core.bus import Event, EventBus
-from whisperflow.core.config import ConfigStore, default_config_path
-from whisperflow.core.dictionary import DictionaryStore
-from whisperflow.core.errors import AudioDeviceError
-from whisperflow.core.hotkey import HotkeyBox
-from whisperflow.core.injector import Injector
-from whisperflow.core.postprocess import PostProcess
-from whisperflow.core.recorder import Recorder
-from whisperflow.core.state import State, StateMachine
-from whisperflow.core.transcriber import Transcriber
-from whisperflow.core.usage import UsageTracker
-from whisperflow.platform.autostart import (
+from soyle.core.bus import Event, EventBus
+from soyle.core.config import ConfigStore, default_config_path
+from soyle.core.dictionary import DictionaryStore
+from soyle.core.errors import AudioDeviceError
+from soyle.core.hotkey import HotkeyBox
+from soyle.core.injector import Injector
+from soyle.core.postprocess import PostProcess
+from soyle.core.recorder import Recorder
+from soyle.core.state import State, StateMachine
+from soyle.core.transcriber import Transcriber
+from soyle.core.usage import UsageTracker
+from soyle.platform.autostart import (
     disable_autostart,
     enable_autostart,
 )
-from whisperflow.platform.single_instance import SingleInstance
-from whisperflow.ui.indicator import Indicator
-from whisperflow.ui.resources import prompt_path, qss_path
-from whisperflow.ui.settings import SettingsWindow
-from whisperflow.ui.tray import TrayIcon
+from soyle.platform.single_instance import SingleInstance
+from soyle.ui.indicator import Indicator
+from soyle.ui.resources import prompt_path, qss_path
+from soyle.ui.settings import SettingsWindow
+from soyle.ui.tray import TrayIcon
 
 log = structlog.get_logger()
 
@@ -71,7 +71,7 @@ class _InferenceJob(QRunnable):
             self._on_error(exc)
 
 
-class WhisperFlowApp(QObject):
+class SoyleApp(QObject):
     """Orchestrator: holds singletons and wires events."""
 
     # Cross-thread signals: worker QRunnables cannot reliably use QTimer.singleShot
@@ -140,7 +140,7 @@ class WhisperFlowApp(QObject):
             self._hotkey.start()
         except Exception as exc:
             log.error("hotkey_registration_failed", error=str(exc))
-            self._tray.toast("WhisperFlow", "Не удалось зарегистрировать хоткей. Откройте настройки.")  # noqa: RUF001
+            self._tray.toast("Söyle", "Не удалось зарегистрировать хоткей. Откройте настройки.")  # noqa: RUF001
             self._show_settings()
 
         # Esc-to-cancel: register a non-suppressing global hook. The callback
@@ -202,7 +202,7 @@ class WhisperFlowApp(QObject):
         self._postprocess.set_mode(mode)
         self._tray.set_mode(mode)
         label = "Rewrite" if mode == "rewrite" else "Polish"
-        self._tray.toast("WhisperFlow", f"Режим LLM: {label}")
+        self._tray.toast("Söyle", f"Режим LLM: {label}")
 
     # ---- Hotkey handlers ----
 
@@ -219,7 +219,7 @@ class WhisperFlowApp(QObject):
             self._tray.set_recording(True)
             self._indicator.show_recording()
         except AudioDeviceError as exc:
-            self._tray.toast("WhisperFlow", f"Микрофон: {exc}")
+            self._tray.toast("Söyle", f"Микрофон: {exc}")
             self._state.reset_to_idle()
 
     def _on_hotkey_released(self, _: dict) -> None:
@@ -323,7 +323,7 @@ class WhisperFlowApp(QObject):
 
         if inject_result.blocked:
             self._tray.toast(
-                "WhisperFlow",
+                "Söyle",
                 "Терминал: текст в буфере — вставьте вручную (Ctrl+V)",
             )
         elif fallback:
@@ -338,20 +338,20 @@ class WhisperFlowApp(QObject):
             if not self._auth_warned:
                 self._auth_warned = True
                 self._tray.toast(
-                    "WhisperFlow",
+                    "Söyle",
                     "Проверьте API-ключ OpenRouter в настройках",
                 )
             return
         if reason == "http_429":
-            self._tray.toast("WhisperFlow", "OpenRouter: превышен лимит, попробуйте позже")
+            self._tray.toast("Söyle", "OpenRouter: превышен лимит, попробуйте позже")
             return
         if reason in ("timeout", "network_error"):
-            self._tray.toast("WhisperFlow", "Сеть недоступна — вставлен сырой текст")
+            self._tray.toast("Söyle", "Сеть недоступна — вставлен сырой текст")
             return
         if reason in ("empty_input", "no_api_key"):
             # Silent: either nothing was said or the user intentionally has no key.
             return
-        self._tray.toast("WhisperFlow", "LLM недоступна — вставлен сырой текст")
+        self._tray.toast("Söyle", "LLM недоступна — вставлен сырой текст")
 
     def _refresh_usage_menu(self) -> None:
         self._tray.set_usage_text(self._usage.summary_line())
@@ -370,7 +370,7 @@ class WhisperFlowApp(QObject):
         previous = current - new_cost
         if previous < limit <= current:
             self._tray.toast(
-                "WhisperFlow",
+                "Söyle",
                 f"Месячный лимит превышен: ${current:.4f} из ${limit:.2f}",
                 level="warning",
             )
@@ -401,7 +401,7 @@ class WhisperFlowApp(QObject):
         if self._settings_window is not None:
             self._settings_window.focus_api_key_setup()
         self._tray.toast(
-            "Добро пожаловать в WhisperFlow",
+            "Добро пожаловать в Söyle",
             "Вставьте OpenRouter API-ключ, чтобы включить полировку. "
             "Без ключа можно работать — получите сырую транскрипцию.",
         )
@@ -428,7 +428,7 @@ class WhisperFlowApp(QObject):
         self._refresh_usage_menu()
         self._sync_autostart()
         self._apply_theme()
-        self._tray.toast("WhisperFlow", "Настройки сохранены")
+        self._tray.toast("Söyle", "Настройки сохранены")
 
     def _sync_autostart(self) -> None:
         if self._cfg.behavior.autostart:
@@ -460,17 +460,17 @@ class WhisperFlowApp(QObject):
     # ---- Logs ----
 
     def _open_logs(self) -> None:
-        log_path = default_config_path().parent / "logs" / "whisperflow.log"
+        log_path = default_config_path().parent / "logs" / "soyle.log"
         if log_path.exists():
             subprocess.Popen(["notepad.exe", str(log_path)])
         else:
-            self._tray.toast("WhisperFlow", "Логов пока нет")
+            self._tray.toast("Söyle", "Логов пока нет")
 
 
 def _configure_logging() -> None:
     log_dir = default_config_path().parent / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
-    log_file = log_dir / "whisperflow.log"
+    log_file = log_dir / "soyle.log"
 
     import logging
     from logging.handlers import RotatingFileHandler
@@ -507,7 +507,7 @@ def _write_crash_report(
     stamp = datetime.now(tz=UTC).strftime("%Y%m%dT%H%M%SZ")
     crash_path = log_dir / f"crash-{stamp}.log"
     header = (
-        f"WhisperFlow crash report\n"
+        f"Söyle crash report\n"
         f"Timestamp:  {stamp}\n"
         f"Platform:   {sys.platform}\n"
         f"Python:     {sys.version.splitlines()[0]}\n"
@@ -562,7 +562,7 @@ def _install_crash_handler() -> None:
             if qapp is not None:
                 box = QMessageBox()
                 box.setIcon(QMessageBox.Icon.Critical)
-                box.setWindowTitle("WhisperFlow — непредвиденная ошибка")
+                box.setWindowTitle("Söyle — непредвиденная ошибка")
                 box.setText(f"{exc_type.__name__}: {exc_value}")
                 info = "Приложите этот файл к багрепорту."
                 if crash_path is not None:
@@ -592,7 +592,7 @@ def main() -> int:
     qapp = QApplication(sys.argv)
     qapp.setQuitOnLastWindowClosed(False)
 
-    app = WhisperFlowApp(qapp)
+    app = SoyleApp(qapp)
     app.start()
 
     try:

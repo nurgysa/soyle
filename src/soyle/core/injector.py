@@ -23,9 +23,9 @@ import pyperclip
 import structlog
 from PySide6.QtCore import QTimer
 
-from whisperflow.core.bus import Event, EventBus
-from whisperflow.platform.paste import find_edit_child, send_ctrl_v, send_wm_paste
-from whisperflow.platform.window import (
+from soyle.core.bus import Event, EventBus
+from soyle.platform.paste import find_edit_child, send_ctrl_v, send_wm_paste
+from soyle.platform.window import (
     get_foreground_hwnd,
     get_window_class_name,
     is_same_window,

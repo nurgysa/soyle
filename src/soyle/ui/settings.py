@@ -20,10 +20,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from whisperflow.core.config import Config, ConfigStore
-from whisperflow.core.dictionary import DictionaryStore
-from whisperflow.core.postprocess import POPULAR_MODELS
-from whisperflow.ui.shortcut_capture import ShortcutCaptureDialog
+from soyle.core.config import Config, ConfigStore
+from soyle.core.dictionary import DictionaryStore
+from soyle.core.postprocess import POPULAR_MODELS
+from soyle.ui.shortcut_capture import ShortcutCaptureDialog
 
 # Curated list of known-good push-to-talk keys. Editable combobox
 # falls back to arbitrary string input for anything not listed.
@@ -59,7 +59,7 @@ class SettingsWindow(QMainWindow):
         self._dict_store = dictionary_store or DictionaryStore()
         self._cfg: Config = store.load()
 
-        self.setWindowTitle("WhisperFlow — настройки")
+        self.setWindowTitle("Söyle — настройки")
         self.resize(560, 440)
 
         central = QWidget()
@@ -267,7 +267,7 @@ class SettingsWindow(QMainWindow):
             return
         resp = QMessageBox.question(
             self,
-            "WhisperFlow",
+            "Söyle",
             "Удалить сохранённый API-ключ из Windows Credential Manager?\n"
             "Постобработка вернётся к выводу сырых транскриптов, пока "
             "не задан новый ключ.",
@@ -344,7 +344,7 @@ class SettingsWindow(QMainWindow):
 
         entry_row = QHBoxLayout()
         self._dict_input = QLineEdit()
-        self._dict_input.setPlaceholderText("WhisperFlow, OpenRouter, Nurgisa ...")
+        self._dict_input.setPlaceholderText("Söyle, OpenRouter, Nurgisa ...")
         entry_row.addWidget(self._dict_input, 1)
         btn_add = QPushButton("Добавить")
         btn_add.clicked.connect(self._dict_add_clicked)
@@ -386,11 +386,11 @@ class SettingsWindow(QMainWindow):
         self._dict_list.addItems(self._dict_store.load())
 
     def _build_about_tab(self) -> QWidget:
-        from whisperflow import __version__
+        from soyle import __version__
 
         w = QWidget()
         layout = QVBoxLayout(w)
-        layout.addWidget(QLabel(f"WhisperFlow v{__version__}"))
+        layout.addWidget(QLabel(f"Söyle v{__version__}"))
         layout.addWidget(
             QLabel("Локальная диктовка через Whisper + OpenRouter для постобработки.")
         )

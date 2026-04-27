@@ -7,7 +7,7 @@ from typing import Any
 
 import keyboard
 
-from whisperflow.core.bus import Event, EventBus
+from soyle.core.bus import Event, EventBus
 
 # All modifier families the `keyboard` library's is_pressed() recognises.
 _MODIFIER_FAMILIES = ("ctrl", "alt", "shift", "windows")

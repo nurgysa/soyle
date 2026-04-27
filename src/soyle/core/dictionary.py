@@ -1,6 +1,6 @@
 """User custom-dictionary storage.
 
-Terms are persisted in ``%APPDATA%\\WhisperFlow\\dictionary.toml`` as a
+Terms are persisted in ``%APPDATA%\\Söyle\\dictionary.toml`` as a
 simple list of strings. They are used in two places:
 
 1. ``Transcriber`` passes them as the faster-whisper ``initial_prompt``
@@ -11,7 +11,7 @@ simple list of strings. They are used in two places:
 Storage format::
 
     version = 1
-    terms = ["WhisperFlow", "OpenRouter", "Astana"]
+    terms = ["Söyle", "OpenRouter", "Astana"]
 """
 from __future__ import annotations
 
@@ -22,12 +22,12 @@ from pathlib import Path
 import tomli_w
 from platformdirs import user_config_path
 
-APP_NAME = "WhisperFlow"
+APP_NAME = "Söyle"
 MAX_TERMS = 200  # faster-whisper initial_prompt tolerates ~224 tokens; leave headroom
 
 
 def default_dictionary_path() -> Path:
-    """Return ``%APPDATA%\\WhisperFlow\\dictionary.toml`` on Windows."""
+    """Return ``%APPDATA%\\Söyle\\dictionary.toml`` on Windows."""
     return user_config_path(APP_NAME, appauthor=False, roaming=True) / "dictionary.toml"
 
 

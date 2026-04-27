@@ -5,7 +5,7 @@ from PySide6.QtCore import QObject, QRectF, Qt, Signal
 from PySide6.QtGui import QAction, QActionGroup, QColor, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import QMenu, QSystemTrayIcon
 
-from whisperflow.ui.resources import asset_path
+from soyle.ui.resources import asset_path
 
 
 class TrayIcon(QObject):
@@ -19,7 +19,7 @@ class TrayIcon(QObject):
     def __init__(self) -> None:
         super().__init__()
         self._tray = QSystemTrayIcon(self._make_icon(recording=False))
-        self._tray.setToolTip("WhisperFlow")
+        self._tray.setToolTip("Söyle")
 
         menu = QMenu()
 
@@ -77,7 +77,7 @@ class TrayIcon(QObject):
         self._act_polish.setChecked(mode == "polish")
         self._act_rewrite.setChecked(mode == "rewrite")
         label = "Rewrite" if mode == "rewrite" else "Polish"
-        self._tray.setToolTip(f"WhisperFlow — режим {label}")
+        self._tray.setToolTip(f"Söyle — режим {label}")
 
     def toast(self, title: str, message: str, level: str = "info") -> None:
         """Show a balloon notification. ``level`` picks the icon shape:

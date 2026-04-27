@@ -5,7 +5,7 @@ import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from whisperflow.core.usage import UsageTracker
+from soyle.core.usage import UsageTracker
 
 
 def _today() -> str:

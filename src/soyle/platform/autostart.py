@@ -8,7 +8,7 @@ if sys.platform == "win32":
     import winreg
 
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
-DEFAULT_APP_NAME = "WhisperFlow"
+DEFAULT_APP_NAME = "Söyle"
 
 
 def enable_autostart(exe_path: str, app_name: str = DEFAULT_APP_NAME) -> None:

@@ -20,7 +20,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw
 
-OUT = Path(__file__).resolve().parent.parent / "src" / "whisperflow" / "assets" / "icon.ico"
+OUT = Path(__file__).resolve().parent.parent / "src" / "soyle" / "assets" / "icon.ico"
 SIZES = [16, 32, 48, 64, 128, 256]
 
 BG = (30, 88, 168, 255)     # deep blue

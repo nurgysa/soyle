@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt
 
-from whisperflow.ui.shortcut_capture import qt_event_to_hotkey_string
+from soyle.ui.shortcut_capture import qt_event_to_hotkey_string
 
 
 # Win32 VK codes used when the user presses a side-distinguished modifier.

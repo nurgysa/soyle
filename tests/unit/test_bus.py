@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import QObject
 
-from whisperflow.core.bus import Event, EventBus
+from soyle.core.bus import Event, EventBus
 
 
 def test_event_values_are_strings() -> None:

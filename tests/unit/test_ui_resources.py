@@ -1,7 +1,7 @@
 """Tests for resource paths."""
 from __future__ import annotations
 
-from whisperflow.ui.resources import asset_path, prompt_path, qss_path
+from soyle.ui.resources import asset_path, prompt_path, qss_path
 
 
 def test_asset_path_returns_file_under_package() -> None:

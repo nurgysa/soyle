@@ -6,9 +6,9 @@ from unittest.mock import MagicMock
 import numpy as np
 import pytest
 
-from whisperflow.core.bus import Event, EventBus
-from whisperflow.core.errors import AudioDeviceError
-from whisperflow.core.recorder import Recorder, compute_rms, trim_silence_endpoints
+from soyle.core.bus import Event, EventBus
+from soyle.core.errors import AudioDeviceError
+from soyle.core.recorder import Recorder, compute_rms, trim_silence_endpoints
 
 
 def test_compute_rms_of_silence_is_zero() -> None:
@@ -53,7 +53,7 @@ def test_trim_silence_preserves_short_clip() -> None:
 
 def _make_mock_sd(mocker, chunks: list[np.ndarray]):
     """Replace sounddevice.InputStream with one that yields given chunks via callback."""
-    mock_sd = mocker.patch("whisperflow.core.recorder.sd")
+    mock_sd = mocker.patch("soyle.core.recorder.sd")
     state = {"stream": None, "callback": None}
 
     def fake_input_stream(**kwargs):
@@ -106,7 +106,7 @@ def test_recorder_emits_started_and_stopped(qtbot, mocker) -> None:
 
 
 def test_recorder_raises_when_no_input_device(mocker) -> None:
-    mock_sd = mocker.patch("whisperflow.core.recorder.sd")
+    mock_sd = mocker.patch("soyle.core.recorder.sd")
     mock_sd.query_devices.return_value = [{"name": "Speakers", "max_input_channels": 0}]
 
     bus = EventBus()

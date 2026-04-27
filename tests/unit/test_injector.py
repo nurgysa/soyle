@@ -1,8 +1,8 @@
 """Tests for Injector — clipboard save, paste, restore cycle."""
 from __future__ import annotations
 
-from whisperflow.core.bus import Event, EventBus
-from whisperflow.core.injector import Injector, _sanitize_for_injection
+from soyle.core.bus import Event, EventBus
+from soyle.core.injector import Injector, _sanitize_for_injection
 
 
 def test_inject_uses_wm_paste_when_edit_child_found(qtbot, mocker) -> None:
@@ -15,13 +15,13 @@ def test_inject_uses_wm_paste_when_edit_child_found(qtbot, mocker) -> None:
     def fake_paste() -> str:
         return clipboard_state["value"]
 
-    mocker.patch("whisperflow.core.injector.pyperclip.copy", side_effect=fake_copy)
-    mocker.patch("whisperflow.core.injector.pyperclip.paste", side_effect=fake_paste)
-    mock_sendv = mocker.patch("whisperflow.core.injector.send_ctrl_v")
-    mock_wm = mocker.patch("whisperflow.core.injector.send_wm_paste", return_value=True)
-    mocker.patch("whisperflow.core.injector.find_edit_child", return_value=5678)
-    mocker.patch("whisperflow.core.injector.get_foreground_hwnd", return_value=1234)
-    mocker.patch("whisperflow.core.injector.get_window_class_name", return_value="Chrome_WidgetWin_1")
+    mocker.patch("soyle.core.injector.pyperclip.copy", side_effect=fake_copy)
+    mocker.patch("soyle.core.injector.pyperclip.paste", side_effect=fake_paste)
+    mock_sendv = mocker.patch("soyle.core.injector.send_ctrl_v")
+    mock_wm = mocker.patch("soyle.core.injector.send_wm_paste", return_value=True)
+    mocker.patch("soyle.core.injector.find_edit_child", return_value=5678)
+    mocker.patch("soyle.core.injector.get_foreground_hwnd", return_value=1234)
+    mocker.patch("soyle.core.injector.get_window_class_name", return_value="Chrome_WidgetWin_1")
 
     bus = EventBus()
     injector = Injector(bus=bus, restore_delay_ms=10)
@@ -49,13 +49,13 @@ def test_inject_falls_back_to_ctrl_v_without_edit_child(qtbot, mocker) -> None:
     def fake_paste() -> str:
         return clipboard_state["value"]
 
-    mocker.patch("whisperflow.core.injector.pyperclip.copy", side_effect=fake_copy)
-    mocker.patch("whisperflow.core.injector.pyperclip.paste", side_effect=fake_paste)
-    mock_sendv = mocker.patch("whisperflow.core.injector.send_ctrl_v")
-    mock_wm = mocker.patch("whisperflow.core.injector.send_wm_paste", return_value=False)
-    mocker.patch("whisperflow.core.injector.find_edit_child", return_value=0)
-    mocker.patch("whisperflow.core.injector.get_foreground_hwnd", return_value=1234)
-    mocker.patch("whisperflow.core.injector.get_window_class_name", return_value="Chrome_WidgetWin_1")
+    mocker.patch("soyle.core.injector.pyperclip.copy", side_effect=fake_copy)
+    mocker.patch("soyle.core.injector.pyperclip.paste", side_effect=fake_paste)
+    mock_sendv = mocker.patch("soyle.core.injector.send_ctrl_v")
+    mock_wm = mocker.patch("soyle.core.injector.send_wm_paste", return_value=False)
+    mocker.patch("soyle.core.injector.find_edit_child", return_value=0)
+    mocker.patch("soyle.core.injector.get_foreground_hwnd", return_value=1234)
+    mocker.patch("soyle.core.injector.get_window_class_name", return_value="Chrome_WidgetWin_1")
 
     bus = EventBus()
     injector = Injector(bus=bus, restore_delay_ms=10)
@@ -69,16 +69,16 @@ def test_inject_falls_back_to_ctrl_v_without_edit_child(qtbot, mocker) -> None:
 
 
 def test_inject_does_not_paste_if_window_changed(qtbot, mocker) -> None:
-    mocker.patch("whisperflow.core.injector.pyperclip.copy")
-    mocker.patch("whisperflow.core.injector.pyperclip.paste", return_value="")
-    mock_sendv = mocker.patch("whisperflow.core.injector.send_ctrl_v")
-    mock_wm = mocker.patch("whisperflow.core.injector.send_wm_paste")
+    mocker.patch("soyle.core.injector.pyperclip.copy")
+    mocker.patch("soyle.core.injector.pyperclip.paste", return_value="")
+    mock_sendv = mocker.patch("soyle.core.injector.send_ctrl_v")
+    mock_wm = mocker.patch("soyle.core.injector.send_wm_paste")
     # capture returns 1111, but later foreground is 2222
     mocker.patch(
-        "whisperflow.core.injector.get_foreground_hwnd",
+        "soyle.core.injector.get_foreground_hwnd",
         side_effect=[1111, 2222, 2222],
     )
-    mocker.patch("whisperflow.core.injector.get_window_class_name", return_value="Chrome_WidgetWin_1")
+    mocker.patch("soyle.core.injector.get_window_class_name", return_value="Chrome_WidgetWin_1")
 
     bus = EventBus()
     injector = Injector(bus=bus)
@@ -92,13 +92,13 @@ def test_inject_does_not_paste_if_window_changed(qtbot, mocker) -> None:
 
 
 def test_inject_emits_events(qtbot, mocker) -> None:
-    mocker.patch("whisperflow.core.injector.pyperclip.copy")
-    mocker.patch("whisperflow.core.injector.pyperclip.paste", return_value="")
-    mocker.patch("whisperflow.core.injector.send_ctrl_v")
-    mocker.patch("whisperflow.core.injector.send_wm_paste", return_value=False)
-    mocker.patch("whisperflow.core.injector.find_edit_child", return_value=0)
-    mocker.patch("whisperflow.core.injector.get_foreground_hwnd", return_value=1234)
-    mocker.patch("whisperflow.core.injector.get_window_class_name", return_value="Chrome_WidgetWin_1")
+    mocker.patch("soyle.core.injector.pyperclip.copy")
+    mocker.patch("soyle.core.injector.pyperclip.paste", return_value="")
+    mocker.patch("soyle.core.injector.send_ctrl_v")
+    mocker.patch("soyle.core.injector.send_wm_paste", return_value=False)
+    mocker.patch("soyle.core.injector.find_edit_child", return_value=0)
+    mocker.patch("soyle.core.injector.get_foreground_hwnd", return_value=1234)
+    mocker.patch("soyle.core.injector.get_window_class_name", return_value="Chrome_WidgetWin_1")
 
     bus = EventBus()
     seen: list[str] = []
@@ -124,15 +124,15 @@ def test_inject_sanitizes_control_chars_before_clipboard(qtbot, mocker) -> None:
     """A malicious LLM reply with NUL / ESC must not reach the clipboard verbatim."""
     captured_copy: list[str] = []
     mocker.patch(
-        "whisperflow.core.injector.pyperclip.copy",
+        "soyle.core.injector.pyperclip.copy",
         side_effect=lambda s: captured_copy.append(s),
     )
-    mocker.patch("whisperflow.core.injector.pyperclip.paste", return_value="")
-    mocker.patch("whisperflow.core.injector.send_ctrl_v")
-    mocker.patch("whisperflow.core.injector.send_wm_paste", return_value=False)
-    mocker.patch("whisperflow.core.injector.find_edit_child", return_value=0)
-    mocker.patch("whisperflow.core.injector.get_foreground_hwnd", return_value=1234)
-    mocker.patch("whisperflow.core.injector.get_window_class_name", return_value="Notepad")
+    mocker.patch("soyle.core.injector.pyperclip.paste", return_value="")
+    mocker.patch("soyle.core.injector.send_ctrl_v")
+    mocker.patch("soyle.core.injector.send_wm_paste", return_value=False)
+    mocker.patch("soyle.core.injector.find_edit_child", return_value=0)
+    mocker.patch("soyle.core.injector.get_foreground_hwnd", return_value=1234)
+    mocker.patch("soyle.core.injector.get_window_class_name", return_value="Notepad")
 
     injector = Injector(bus=EventBus(), restore_delay_ms=10)
     injector.inject("hello\x00\x07\x1bworld", target_hwnd=injector.capture_target())
@@ -149,16 +149,16 @@ def test_inject_blocks_terminal_class_keeps_clipboard(qtbot, mocker) -> None:
     """Terminal blocklist: text in clipboard but NO auto-paste."""
     captured_copy: list[str] = []
     mocker.patch(
-        "whisperflow.core.injector.pyperclip.copy",
+        "soyle.core.injector.pyperclip.copy",
         side_effect=lambda s: captured_copy.append(s),
     )
-    mocker.patch("whisperflow.core.injector.pyperclip.paste", return_value="")
-    mock_sendv = mocker.patch("whisperflow.core.injector.send_ctrl_v")
-    mock_wm = mocker.patch("whisperflow.core.injector.send_wm_paste", return_value=True)
-    mocker.patch("whisperflow.core.injector.find_edit_child", return_value=0)
-    mocker.patch("whisperflow.core.injector.get_foreground_hwnd", return_value=1234)
+    mocker.patch("soyle.core.injector.pyperclip.paste", return_value="")
+    mock_sendv = mocker.patch("soyle.core.injector.send_ctrl_v")
+    mock_wm = mocker.patch("soyle.core.injector.send_wm_paste", return_value=True)
+    mocker.patch("soyle.core.injector.find_edit_child", return_value=0)
+    mocker.patch("soyle.core.injector.get_foreground_hwnd", return_value=1234)
     mocker.patch(
-        "whisperflow.core.injector.get_window_class_name",
+        "soyle.core.injector.get_window_class_name",
         return_value="ConsoleWindowClass",
     )
 
@@ -174,14 +174,14 @@ def test_inject_blocks_terminal_class_keeps_clipboard(qtbot, mocker) -> None:
 
 
 def test_inject_blocks_windows_terminal_class(qtbot, mocker) -> None:
-    mocker.patch("whisperflow.core.injector.pyperclip.copy")
-    mocker.patch("whisperflow.core.injector.pyperclip.paste", return_value="")
-    mock_sendv = mocker.patch("whisperflow.core.injector.send_ctrl_v")
-    mocker.patch("whisperflow.core.injector.send_wm_paste", return_value=False)
-    mocker.patch("whisperflow.core.injector.find_edit_child", return_value=0)
-    mocker.patch("whisperflow.core.injector.get_foreground_hwnd", return_value=1234)
+    mocker.patch("soyle.core.injector.pyperclip.copy")
+    mocker.patch("soyle.core.injector.pyperclip.paste", return_value="")
+    mock_sendv = mocker.patch("soyle.core.injector.send_ctrl_v")
+    mocker.patch("soyle.core.injector.send_wm_paste", return_value=False)
+    mocker.patch("soyle.core.injector.find_edit_child", return_value=0)
+    mocker.patch("soyle.core.injector.get_foreground_hwnd", return_value=1234)
     mocker.patch(
-        "whisperflow.core.injector.get_window_class_name",
+        "soyle.core.injector.get_window_class_name",
         return_value="CASCADIA_HOSTING_WINDOW_CLASS",
     )
 
@@ -195,14 +195,14 @@ def test_inject_blocks_windows_terminal_class(qtbot, mocker) -> None:
 # ---- M1: keystroke method doesn't touch the clipboard ----
 
 def test_keystroke_method_writes_text_without_clipboard(qtbot, mocker) -> None:
-    mock_copy = mocker.patch("whisperflow.core.injector.pyperclip.copy")
-    mocker.patch("whisperflow.core.injector.pyperclip.paste", return_value="secret")
-    mock_sendv = mocker.patch("whisperflow.core.injector.send_ctrl_v")
-    mock_wm = mocker.patch("whisperflow.core.injector.send_wm_paste")
-    mock_write = mocker.patch("whisperflow.core.injector.keyboard.write")
-    mocker.patch("whisperflow.core.injector.get_foreground_hwnd", return_value=1234)
+    mock_copy = mocker.patch("soyle.core.injector.pyperclip.copy")
+    mocker.patch("soyle.core.injector.pyperclip.paste", return_value="secret")
+    mock_sendv = mocker.patch("soyle.core.injector.send_ctrl_v")
+    mock_wm = mocker.patch("soyle.core.injector.send_wm_paste")
+    mock_write = mocker.patch("soyle.core.injector.keyboard.write")
+    mocker.patch("soyle.core.injector.get_foreground_hwnd", return_value=1234)
     mocker.patch(
-        "whisperflow.core.injector.get_window_class_name",
+        "soyle.core.injector.get_window_class_name",
         return_value="Chrome_WidgetWin_1",
     )
 
@@ -219,11 +219,11 @@ def test_keystroke_method_writes_text_without_clipboard(qtbot, mocker) -> None:
 
 def test_keystroke_method_still_honours_terminal_blocklist(qtbot, mocker) -> None:
     """Newlines typed into a terminal auto-execute just like a paste would."""
-    mock_copy = mocker.patch("whisperflow.core.injector.pyperclip.copy")
-    mock_write = mocker.patch("whisperflow.core.injector.keyboard.write")
-    mocker.patch("whisperflow.core.injector.get_foreground_hwnd", return_value=1234)
+    mock_copy = mocker.patch("soyle.core.injector.pyperclip.copy")
+    mock_write = mocker.patch("soyle.core.injector.keyboard.write")
+    mocker.patch("soyle.core.injector.get_foreground_hwnd", return_value=1234)
     mocker.patch(
-        "whisperflow.core.injector.get_window_class_name",
+        "soyle.core.injector.get_window_class_name",
         return_value="ConsoleWindowClass",
     )
 

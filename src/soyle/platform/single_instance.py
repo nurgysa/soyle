@@ -13,7 +13,7 @@ if sys.platform == "win32":
 class SingleInstance:
     """Named-mutex lock; call acquire() at startup to detect second launch."""
 
-    def __init__(self, name: str = "WhisperFlow-SingleInstance-Mutex") -> None:
+    def __init__(self, name: str = "Soyle-SingleInstance-Mutex") -> None:
         self._name = name
         self._handle: Any = None
 

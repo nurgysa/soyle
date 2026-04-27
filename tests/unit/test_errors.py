@@ -1,7 +1,7 @@
 """Tests for domain exception hierarchy."""
 from __future__ import annotations
 
-from whisperflow.core.errors import (
+from soyle.core.errors import (
     AudioDeviceError,
     ConfigError,
     CudaOOMError,
@@ -9,7 +9,7 @@ from whisperflow.core.errors import (
     ModelNotLoadedError,
     PermissionDeniedError,
     PostProcessError,
-    WhisperFlowError,
+    SoyleError,
 )
 
 
@@ -23,11 +23,11 @@ def test_all_errors_inherit_base() -> None:
         PostProcessError,
         ConfigError,
     ]:
-        assert issubclass(exc_type, WhisperFlowError)
+        assert issubclass(exc_type, SoyleError)
 
 
 def test_base_error_is_exception() -> None:
-    assert issubclass(WhisperFlowError, Exception)
+    assert issubclass(SoyleError, Exception)
 
 
 def test_error_carries_message() -> None:
