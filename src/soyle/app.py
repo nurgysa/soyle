@@ -140,7 +140,7 @@ class SoyleApp(QObject):
             self._hotkey.start()
         except Exception as exc:
             log.error("hotkey_registration_failed", error=str(exc))
-            self._tray.toast("Söyle", "Не удалось зарегистрировать хоткей. Откройте настройки.")  # noqa: RUF001
+            self._tray.toast("Söyle", "Не удалось зарегистрировать хоткей. Откройте настройки.")
             self._show_settings()
 
         # Esc-to-cancel: register a non-suppressing global hook. The callback

@@ -65,7 +65,19 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "N", "UP", "B", "A", "C4", "SIM", "RUF"]
-ignore = ["E501"]  # line length handled by formatter
+ignore = [
+  "E501",   # line length — handled by formatter
+  # The product is a Kazakh + Russian + English dictation tool. Cyrillic
+  # characters appear in every user-visible string by design (toasts,
+  # error messages, settings labels). RUF001/RUF002/RUF003 flag any
+  # Cyrillic letter that visually resembles a Latin one as "ambiguous"
+  # — for this codebase that's pure noise, not signal. Disabling them
+  # keeps the lint output focused on real issues instead of teaching
+  # contributors to add `# noqa` to every Russian string they write.
+  "RUF001", # ambiguous unicode in strings
+  "RUF002", # ambiguous unicode in docstrings
+  "RUF003", # ambiguous unicode in comments
+]
 
 [tool.mypy]
 python_version = "3.12"

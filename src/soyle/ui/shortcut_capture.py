@@ -158,7 +158,7 @@ class ShortcutCaptureDialog(QDialog):
     def captured(self) -> str:
         return self._captured
 
-    def keyPressEvent(self, event: QKeyEvent) -> None:
+    def keyPressEvent(self, event: QKeyEvent) -> None:  # noqa: N802 — Qt API
         # Intercept everything except Escape (close) so that pressing a
         # modifier doesn't get consumed by Qt's default focus handling.
         if event.key() == Qt.Key.Key_Escape:

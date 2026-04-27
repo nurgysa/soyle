@@ -72,7 +72,7 @@ class SettingsWindow(QMainWindow):
         self._tabs.addTab(self._build_postprocess_tab(), "LLM")
         self._tabs.addTab(self._build_dictionary_tab(), "Словарь")
         self._tabs.addTab(self._build_ui_tab(), "Внешний вид")
-        self._tabs.addTab(self._build_about_tab(), "О программе")  # noqa: RUF001
+        self._tabs.addTab(self._build_about_tab(), "О программе")
         root.addWidget(self._tabs)
 
         btn_row = QHBoxLayout()
