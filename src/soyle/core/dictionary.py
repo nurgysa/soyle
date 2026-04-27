@@ -16,6 +16,7 @@ Storage format::
 from __future__ import annotations
 
 import tomllib
+import unicodedata
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -129,9 +130,23 @@ def _dedupe_preserving_order(items: object) -> list[str]:
     seen: set[str] = set()
     out: list[str] = []
     for item in items:
-        key = item.casefold()
+        key = _normalize_key(item)
         if key in seen:
             continue
         seen.add(key)
         out.append(item)
     return out
+
+
+def _normalize_key(s: str) -> str:
+    """Diacritic-insensitive, case-insensitive key for dedup.
+
+    Kazakh users frequently type proper nouns with or without diacritics
+    (``Söyle`` vs ``soyle``). NFKD splits ``ö`` into ``o + ¨``; the combining
+    mark is then stripped and the result casefolded. So ``Söyle``, ``soyle``,
+    and ``SÖYLE`` all collapse to the same key while the *first-typed* form
+    is preserved in the visible list.
+    """
+    decomposed = unicodedata.normalize("NFKD", s)
+    stripped = "".join(ch for ch in decomposed if not unicodedata.combining(ch))
+    return stripped.casefold()
