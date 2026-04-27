@@ -76,6 +76,12 @@ warn_unused_ignores = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+# Exclude gpu-marked tests by default — they instantiate a real Whisper
+# model in a module-scoped fixture, which is slow even when the audio
+# fixtures aren't present (the per-test skip check fires AFTER the model
+# loads). Opt in explicitly with `pytest -m gpu` when you actually want
+# them; CI runs them in a separate job on a GPU runner.
+addopts = "-m 'not gpu'"
 markers = [
   "gpu: integration tests that require a CUDA-capable GPU",
 ]
