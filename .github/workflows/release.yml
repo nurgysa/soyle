@@ -1,0 +1,77 @@
+name: release
+
+# Triggered by pushing a tag like `v1.0.1`. Builds the Windows installer
+# with PyInstaller + Inno Setup on a clean runner and uploads the .exe to
+# the matching GitHub Release. Non-technical end users download that
+# single file from github.com/<repo>/releases/latest — no git, no uv, no
+# command line.
+#
+# Code signing: Installers produced by this workflow are UNSIGNED. When
+# you obtain a SignPath Foundation account (free for open-source, see
+# docs/signing.md), extend this workflow following the recipe in that
+# doc — the changes are additive and documented step-by-step.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:  # manual re-run from the Actions tab if a build fails
+
+permissions:
+  contents: write  # needed by softprops/action-gh-release to attach assets
+
+jobs:
+  build-installer:
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        run: irm https://astral.sh/uv/install.ps1 | iex
+        shell: pwsh
+
+      - name: Install Inno Setup 6
+        # Chocolatey is pre-installed on windows-latest runners and lands
+        # iscc.exe at "C:\Program Files (x86)\Inno Setup 6\iscc.exe" —
+        # which is one of the paths that build_installer.py already
+        # auto-detects, so no env var plumbing needed.
+        run: choco install innosetup --yes --no-progress
+        shell: pwsh
+
+      - name: Sync build deps
+        # --extra build pulls pyinstaller + pillow. We deliberately skip
+        # --extra gpu so the bundle stays CPU-only (~300 MB). End users
+        # with a CUDA GPU get acceleration via their NVIDIA driver at
+        # runtime; transcriber.py falls back to CPU if it's missing.
+        run: uv sync --extra build
+        shell: pwsh
+
+      - name: Verify version matches tag
+        # Catches the classic mistake of tagging v1.0.1 without bumping
+        # pyproject.toml — would otherwise ship an installer named
+        # Soyle-Setup-1.0.0.exe for a v1.0.1 release.
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}" -replace '^v', ''
+          $pyproject = uv run python -c "import tomllib, pathlib; print(tomllib.loads(pathlib.Path('pyproject.toml').read_text())['project']['version'])"
+          if ($tag -ne $pyproject.Trim()) {
+            Write-Error "Tag $tag does not match pyproject.toml version $pyproject"
+            exit 1
+          }
+
+      - name: Build installer
+        run: uv run python scripts/build_installer.py
+        shell: pwsh
+
+      - name: Show artifact
+        shell: pwsh
+        run: Get-ChildItem release\
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/Soyle-Setup-*.exe
+          fail_on_unmatched_files: true
+          generate_release_notes: true
+          draft: false
