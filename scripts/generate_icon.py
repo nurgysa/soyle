@@ -33,7 +33,7 @@ def _render(size: int) -> Image.Image:
 
     # Everything below is authored in 256-unit virtual coords.
     def sc(v: float) -> int:
-        return int(round(v * size / 256))
+        return round(v * size / 256)
 
     # Background circle with a small transparent margin so the shape
     # doesn't crop on circular-badge OSes (macOS dock, some Windows skins).

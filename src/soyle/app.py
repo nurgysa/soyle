@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import subprocess
 import sys
 import traceback
@@ -170,10 +171,10 @@ class SoyleApp(QObject):
     def quit(self) -> None:
         self._hotkey.stop()
         if self._esc_hook is not None:
-            try:
+            # Hook may already be gone (race during shutdown); we just want it
+            # off, so swallow whatever the keyboard library raises.
+            with contextlib.suppress(Exception):
                 keyboard.unhook(self._esc_hook)
-            except Exception:
-                pass
             self._esc_hook = None
         self._indicator.hide_indicator()
         self._tray.hide()

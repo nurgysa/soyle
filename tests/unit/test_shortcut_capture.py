@@ -5,7 +5,6 @@ from PySide6.QtCore import Qt
 
 from soyle.ui.shortcut_capture import qt_event_to_hotkey_string
 
-
 # Win32 VK codes used when the user presses a side-distinguished modifier.
 VK_LSHIFT = 0xA0
 VK_RSHIFT = 0xA1
