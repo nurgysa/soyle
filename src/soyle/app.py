@@ -414,6 +414,7 @@ class SoyleApp(QObject):
         # Refresh in place — an in-flight _InferenceJob may still hold
         # references to these instances, so swapping them would leak state.
         self._transcriber.set_initial_prompt(self._dict_store.as_whisper_prompt())
+        self._transcriber.set_language(self._cfg.whisper.language)
         self._postprocess.reload(
             config=self._cfg.postprocess,
             api_key=self._store.get_api_key(),

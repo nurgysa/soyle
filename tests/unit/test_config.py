@@ -141,6 +141,33 @@ def test_configstore_save_roundtrip(tmp_path: Path) -> None:
     assert reloaded.whisper.beam_size == 7
 
 
+def test_whisper_language_roundtrip_explicit_code(tmp_path: Path) -> None:
+    """Forcing a language ('kk') must persist through save/reload."""
+    target = tmp_path / "config.toml"
+    store = ConfigStore(config_path=target)
+
+    cfg = store.load()
+    cfg.whisper.language = "kk"
+    store.save(cfg)
+
+    reloaded = ConfigStore(config_path=target).load()
+    assert reloaded.whisper.language == "kk"
+
+
+def test_whisper_language_roundtrip_auto_is_none(tmp_path: Path) -> None:
+    """Auto-detect (None) round-trips through TOML (None values are omitted on
+    write but reappear as None via the pydantic default)."""
+    target = tmp_path / "config.toml"
+    store = ConfigStore(config_path=target)
+
+    cfg = store.load()
+    cfg.whisper.language = None
+    store.save(cfg)
+
+    reloaded = ConfigStore(config_path=target).load()
+    assert reloaded.whisper.language is None
+
+
 def test_configstore_rejects_unknown_field(tmp_path: Path) -> None:
     target = tmp_path / "config.toml"
     target.write_text(

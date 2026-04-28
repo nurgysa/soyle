@@ -118,6 +118,15 @@ class Transcriber:
         """Update the glossary hint used on the next transcribe call."""
         self._initial_prompt = prompt
 
+    def set_language(self, language: str | None) -> None:
+        """Update the forced-language code (or None for auto-detect).
+
+        Hot-swappable: only affects subsequent transcribe() calls. The model
+        itself doesn't need to be reloaded — language is just an argument to
+        WhisperModel.transcribe.
+        """
+        self._language = language
+
     @property
     def device(self) -> str:
         return self._actual_device

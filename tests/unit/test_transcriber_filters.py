@@ -1,7 +1,7 @@
 """Tests for Transcriber's pure text-post-processing helpers."""
 from __future__ import annotations
 
-from soyle.core.transcriber import filter_hallucinations, normalize_whitespace
+from soyle.core.transcriber import Transcriber, filter_hallucinations, normalize_whitespace
 
 
 def test_normalize_whitespace_collapses_spaces() -> None:
@@ -34,3 +34,21 @@ def test_filter_hallucinations_handles_empty() -> None:
 def test_filter_hallucinations_preserves_real_speech() -> None:
     text = "Привет, это обычное предложение."
     assert filter_hallucinations(text) == text
+
+
+def test_set_language_updates_without_loading_model() -> None:
+    """set_language must be hot-swappable — it should NOT trigger model load.
+
+    The Transcriber constructor stores the language but lazy-loads the model;
+    set_language must update the attribute directly so it takes effect on the
+    next transcribe() call without restarting.
+    """
+    t = Transcriber(language="ru")
+    # No call to transcribe() / warm_up() — model must remain None.
+    assert t._model is None
+    t.set_language("kk")
+    assert t._language == "kk"
+    assert t._model is None
+    t.set_language(None)
+    assert t._language is None
+    assert t._model is None

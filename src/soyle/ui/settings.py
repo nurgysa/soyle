@@ -168,6 +168,19 @@ class SettingsWindow(QMainWindow):
         self._w_compute.addItems(["int8", "float16", "float32"])
         self._w_compute.setCurrentText(self._cfg.whisper.compute_type)
         layout.addRow("Compute type:", self._w_compute)
+
+        # None = auto-detect (Whisper picks per utterance). Forcing a language
+        # avoids cross-language mis-detections (e.g. short Kazakh phrase
+        # detected as Turkish) at the cost of failing on the rare other-language
+        # utterance.
+        self._w_language = QComboBox()
+        self._w_language.addItem("Авто (определять автоматически)", None)
+        self._w_language.addItem("Қазақша", "kk")
+        self._w_language.addItem("Русский", "ru")
+        self._w_language.addItem("English", "en")
+        idx = self._w_language.findData(self._cfg.whisper.language)
+        self._w_language.setCurrentIndex(max(0, idx))
+        layout.addRow("Язык:", self._w_language)
         return w
 
     def _build_postprocess_tab(self) -> QWidget:
@@ -426,6 +439,7 @@ class SettingsWindow(QMainWindow):
         self._cfg.whisper.model = self._w_model.text().strip()
         self._cfg.whisper.device = self._w_device.currentText()  # type: ignore[assignment]
         self._cfg.whisper.compute_type = self._w_compute.currentText()  # type: ignore[assignment]
+        self._cfg.whisper.language = self._w_language.currentData()
 
         self._cfg.postprocess.enabled = self._pp_enabled.isChecked()
         self._cfg.postprocess.mode = self._pp_mode.currentData()  # type: ignore[assignment]
