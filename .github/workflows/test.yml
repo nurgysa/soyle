@@ -40,5 +40,12 @@ jobs:
         # pip-audit queries the PyPA advisory DB for known CVEs in installed
         # deps. `uvx` runs the tool in an ephemeral venv so it doesn't pollute
         # the project environment.
-        run: uv pip freeze | uvx pip-audit --requirement /dev/stdin
+        #
+        # We write `uv pip freeze` to a real file rather than piping through
+        # stdin: on the windows-latest runner Git Bash converts /dev/stdin
+        # to \proc\self\fd\0 (backslashes!) and pip-audit treats that as a
+        # malformed file path. A temp file dodges the MSYS path mangling.
+        run: |
+          uv pip freeze > requirements.txt
+          uvx pip-audit -r requirements.txt
         shell: bash
