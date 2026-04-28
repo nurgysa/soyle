@@ -85,6 +85,31 @@ def test_audio_max_recording_positive() -> None:
         AudioConfig(max_recording_seconds=-1)
 
 
+def test_audio_silence_threshold_default_and_validation() -> None:
+    cfg = AudioConfig()
+    assert cfg.silence_threshold_rms == 0.02
+
+    # Reject below floor (would treat near-zero noise as speech)
+    with pytest.raises(ValueError):
+        AudioConfig(silence_threshold_rms=0.0)
+    # Reject above ceiling (would drop normal speaking volume)
+    with pytest.raises(ValueError):
+        AudioConfig(silence_threshold_rms=0.5)
+    # Accept realistic office-tightened value
+    AudioConfig(silence_threshold_rms=0.05)
+
+
+def test_audio_silence_threshold_roundtrip(tmp_path: Path) -> None:
+    target = tmp_path / "config.toml"
+    store = ConfigStore(config_path=target)
+    cfg = store.load()
+    cfg.audio.silence_threshold_rms = 0.045
+    store.save(cfg)
+
+    reloaded = ConfigStore(config_path=target).load()
+    assert reloaded.audio.silence_threshold_rms == 0.045
+
+
 def test_postprocess_timeout_positive() -> None:
     with pytest.raises(ValueError):
         PostProcessConfig(timeout_seconds=0)

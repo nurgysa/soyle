@@ -26,7 +26,12 @@ class AudioConfig(BaseModel):
 
     device: str = "default"
     sample_rate: int = Field(default=16000, ge=8000, le=48000)
+    # When True, trim leading/trailing audio frames quieter than
+    # silence_threshold_rms before sending to Whisper. Tightens the
+    # "endpoints" of the recording — useful when colleagues speak nearby
+    # while you start/end your push-to-talk press.
     vad_enabled: bool = True
+    silence_threshold_rms: float = Field(default=0.02, ge=0.001, le=0.2)
     vad_min_speech_ms: int = Field(default=300, ge=0)
     max_recording_seconds: int = Field(default=90, gt=0, le=600)
 

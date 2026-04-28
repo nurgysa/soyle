@@ -21,7 +21,7 @@ from soyle.core.errors import AudioDeviceError
 from soyle.core.hotkey import HotkeyBox
 from soyle.core.injector import Injector
 from soyle.core.postprocess import PostProcess
-from soyle.core.recorder import Recorder
+from soyle.core.recorder import Recorder, trim_silence_endpoints
 from soyle.core.state import State, StateMachine
 from soyle.core.transcriber import Transcriber
 from soyle.core.usage import UsageTracker
@@ -239,7 +239,20 @@ class SoyleApp(QObject):
 
         self._tray.set_recording(False)
 
-        if result.duration_ms < self._cfg.audio.vad_min_speech_ms:
+        # Endpoint silence trimming: drops quiet head/tail frames so a
+        # colleague's voice that bled in before/after your dictation
+        # doesn't reach Whisper. Middle frames are untouched (full speaker
+        # isolation needs voice fingerprinting — separate feature).
+        audio = result.audio
+        if self._cfg.audio.vad_enabled and audio.size > 0:
+            audio = trim_silence_endpoints(
+                audio,
+                sample_rate=self._cfg.audio.sample_rate,
+                threshold_rms=self._cfg.audio.silence_threshold_rms,
+            )
+        trimmed_duration_ms = int(len(audio) * 1000 / self._cfg.audio.sample_rate)
+
+        if trimmed_duration_ms < self._cfg.audio.vad_min_speech_ms:
             self._indicator.flash_error("Слишком коротко")
             self._state.reset_to_idle()
             return
@@ -250,7 +263,7 @@ class SoyleApp(QObject):
         job = _InferenceJob(
             transcriber=self._transcriber,
             postprocess=self._postprocess,
-            audio=result.audio,
+            audio=audio,
             sample_rate=self._cfg.audio.sample_rate,
             on_done=self._on_inference_done,
             on_error=self._on_inference_error,

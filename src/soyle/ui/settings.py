@@ -151,9 +151,31 @@ class SettingsWindow(QMainWindow):
         self._audio_max.setRange(1, 600)
         self._audio_max.setValue(self._cfg.audio.max_recording_seconds)
         layout.addRow("Макс. запись (сек):", self._audio_max)
-        self._audio_vad = QCheckBox("VAD включён")
+
+        self._audio_vad = QCheckBox("Обрезать тишину в начале и конце записи")
         self._audio_vad.setChecked(self._cfg.audio.vad_enabled)
+        self._audio_vad.setToolTip(
+            "Удаляет тихие фреймы по краям записи. Помогает когда коллеги "
+            "говорят рядом — их голос будет ниже порога и обрежется."
+        )
         layout.addRow(self._audio_vad)
+
+        # 0.005-step QDoubleSpinBox covers the realistic operating range:
+        # 0.01 = sensitive (open mic, picks up far voices),
+        # 0.02 = default (good for normal home setup),
+        # 0.04-0.06 = office (only close-talking speech survives),
+        # 0.08+ = very strict (whispers near mic get dropped).
+        self._audio_threshold = QDoubleSpinBox()
+        self._audio_threshold.setDecimals(3)
+        self._audio_threshold.setRange(0.001, 0.200)
+        self._audio_threshold.setSingleStep(0.005)
+        self._audio_threshold.setValue(self._cfg.audio.silence_threshold_rms)
+        self._audio_threshold.setToolTip(
+            "Порог RMS-энергии для определения тишины. "
+            "Ниже = пропускает тихую/удалённую речь. "
+            "Выше = только громкая близкая речь."
+        )
+        layout.addRow("Порог тишины (RMS):", self._audio_threshold)
         return w
 
     def _build_whisper_tab(self) -> QWidget:
@@ -456,6 +478,7 @@ class SettingsWindow(QMainWindow):
         self._cfg.audio.device = self._audio_device.text().strip() or "default"
         self._cfg.audio.max_recording_seconds = self._audio_max.value()
         self._cfg.audio.vad_enabled = self._audio_vad.isChecked()
+        self._cfg.audio.silence_threshold_rms = float(self._audio_threshold.value())
 
         self._cfg.whisper.model = self._resolve_combo_model_id(self._w_model)
         self._cfg.whisper.device = self._w_device.currentText()  # type: ignore[assignment]
