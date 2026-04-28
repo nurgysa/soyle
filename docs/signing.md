@@ -25,7 +25,7 @@ open-source).
 1. Open <https://signpath.org/apply>.
 2. Select **"Open Source Project"** and fill in:
    - **Project name:** `Söyle`
-   - **Repository URL:** `https://github.com/nurgisa/soyle`
+   - **Repository URL:** `https://github.com/nurgysa/soyle`
    - **License:** MIT (they require an OSI-approved license — MIT
      qualifies).
    - **Description:** a couple of sentences about what the app does.
@@ -60,7 +60,7 @@ After logging into SignPath:
    - Slug: `release-signing`
    - Certificate: `Foundation OSS Authenticode` (the free one).
    - Trigger: GitHub Actions workflow
-     - Repository: `nurgisa/soyle`
+     - Repository: `nurgysa/soyle`
      - Workflow file: `.github/workflows/release.yml`
      - Branch / tag pattern: `refs/tags/v*`
    - Approvers: yourself (for OSS Foundation projects typically no

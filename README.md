@@ -17,7 +17,7 @@ Kazakhstanis speak every day**.
 ## Download and install
 
 1. **Download** the latest installer from the
-   [Releases page](https://github.com/nurgisa/soyle/releases/latest) —
+   [Releases page](https://github.com/nurgysa/soyle/releases/latest) —
    it's a single file called `Soyle-Setup-<version>.exe` (~300 MB).
 2. **Double-click** the downloaded file.
 3. If Windows shows a blue *"Windows protected your PC"* screen, click
@@ -81,7 +81,7 @@ delete `%APPDATA%\Soyle` manually.
 ### Install from source
 
 ```powershell
-git clone https://github.com/nurgisa/soyle
+git clone https://github.com/nurgysa/soyle
 cd soyle
 irm https://astral.sh/uv/install.ps1 | iex
 uv sync --extra dev --extra gpu   # drop --extra gpu for CPU-only
@@ -124,7 +124,7 @@ git push origin v1.0.1
 ```
 
 The workflow finishes in ~6–10 minutes; the new `.exe` appears under
-[Releases](https://github.com/nurgisa/soyle/releases).
+[Releases](https://github.com/nurgysa/soyle/releases).
 
 ### Installer internals
 

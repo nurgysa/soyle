@@ -225,7 +225,7 @@ class PostProcess:
         headers = {
             "Authorization": f"Bearer {self._api_key}",
             "Content-Type": "application/json",
-            "HTTP-Referer": "https://github.com/nurgisa/soyle",
+            "HTTP-Referer": "https://github.com/nurgysa/soyle",
             # ASCII-only — HTTP headers per RFC 7230 forbid non-latin-1 bytes,
             # and httpx enforces ASCII. Keep the umlaut for UI strings only.
             "X-Title": "Soyle",

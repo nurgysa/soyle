@@ -48,9 +48,9 @@ gpu = [
 soyle = "soyle.app:main"
 
 [project.urls]
-Homepage = "https://github.com/nurgisa/soyle"
-Issues = "https://github.com/nurgisa/soyle/issues"
-Changelog = "https://github.com/nurgisa/soyle/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/nurgysa/soyle"
+Issues = "https://github.com/nurgysa/soyle/issues"
+Changelog = "https://github.com/nurgysa/soyle/blob/main/CHANGELOG.md"
 
 [build-system]
 requires = ["hatchling"]

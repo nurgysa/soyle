@@ -3,7 +3,7 @@
 ## Supported versions
 
 Söyle is in early development. Only the **latest released version** on
-the [Releases page](https://github.com/nurgisa/soyle/releases/latest)
+the [Releases page](https://github.com/nurgysa/soyle/releases/latest)
 receives security fixes. Older versions are not supported — please
 upgrade if you're running anything older.
 

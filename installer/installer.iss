@@ -18,7 +18,7 @@
 ; have to deal with the umlaut.
 #define MyAppSlug        "Soyle"
 #define MyAppPublisher   "Nurgisa Andasbek"
-#define MyAppURL         "https://github.com/nurgisa/soyle"
+#define MyAppURL         "https://github.com/nurgysa/soyle"
 #define MyAppExeName     "Soyle.exe"
 ; Stable GUID — identifies the product across versions for upgrade/uninstall.
 ; Fresh v4 UUID generated for the WhisperFlow → Söyle rebrand so that the

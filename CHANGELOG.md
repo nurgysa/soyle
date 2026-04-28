@@ -72,5 +72,5 @@ First public release of Söyle (formerly **WhisperFlow** during private developm
   first download. SignPath Foundation application is in flight; future
   releases will be signed automatically.
 
-[Unreleased]: https://github.com/nurgisa/soyle/compare/v1.0.0...HEAD
-[1.0.0]: https://github.com/nurgisa/soyle/releases/tag/v1.0.0
+[Unreleased]: https://github.com/nurgysa/soyle/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/nurgysa/soyle/releases/tag/v1.0.0

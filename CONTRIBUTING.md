@@ -11,7 +11,7 @@ kind, be respectful, assume good faith.
 ## Quick start
 
 ```powershell
-git clone https://github.com/nurgisa/soyle
+git clone https://github.com/nurgysa/soyle
 cd soyle
 irm https://astral.sh/uv/install.ps1 | iex   # install uv if you don't have it
 uv sync --extra dev                          # install dev dependencies
