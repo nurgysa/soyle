@@ -99,7 +99,10 @@ def main() -> int:
     print(f"Using iscc at: {iscc}")
     run_iscc(iscc, version)
 
-    installer = RELEASE / f"Söyle-Setup-{version}.exe"
+    # ASCII slug — must match `OutputBaseFilename={#MyAppSlug}-Setup-...`
+    # in installer.iss, where MyAppSlug = "Soyle". Don't change to "Söyle"
+    # without also flipping installer.iss MyAppSlug or OutputBaseFilename.
+    installer = RELEASE / f"Soyle-Setup-{version}.exe"
     if installer.is_file():
         size_mb = installer.stat().st_size / 1_048_576
         print(f"\nInstaller: {installer} ({size_mb:.1f} MB)")
