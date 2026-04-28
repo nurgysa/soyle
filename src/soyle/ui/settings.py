@@ -185,12 +185,14 @@ class SettingsWindow(QMainWindow):
         layout.addRow("Compute type:", self._w_compute)
 
         # None = auto-detect (Whisper picks per utterance). Forcing a language
-        # avoids cross-language mis-detections (e.g. short Kazakh phrase
-        # detected as Turkish) at the cost of failing on the rare other-language
-        # utterance.
+        # avoids cross-language mis-detections at the cost of failing on the
+        # rare other-language utterance. Kazakh ("kk") is intentionally not
+        # exposed here: faster-whisper checkpoints + CTranslate2 hang on
+        # GTX 16-series GPUs (Turing without tensor cores) for KZ inference,
+        # and CPU+small produces too many hallucinations to be useful.
+        # Prompts and tests retain KZ rules so re-adding "kk" is one line.
         self._w_language = QComboBox()
         self._w_language.addItem("Авто (определять автоматически)", None)
-        self._w_language.addItem("Қазақша", "kk")
         self._w_language.addItem("Русский", "ru")
         self._w_language.addItem("English", "en")
         idx = self._w_language.findData(self._cfg.whisper.language)
