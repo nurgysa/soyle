@@ -5,7 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from soyle.core.dictionary import MAX_TERMS, DictionaryStore
+from soyle.core.config import default_config_path
+from soyle.core.dictionary import MAX_TERMS, DictionaryStore, default_dictionary_path
 
 
 @pytest.fixture
@@ -17,6 +18,18 @@ def test_empty_when_missing(store: DictionaryStore) -> None:
     assert store.load() == []
     assert store.as_whisper_prompt() == ""
     assert store.as_llm_instruction() == ""
+
+
+def test_dictionary_path_co_located_with_config() -> None:
+    """Dictionary must live in the same directory as config.toml.
+
+    Regression test: dictionary.py used to declare its own APP_NAME constant
+    (with the umlaut) while config.py used APP_SLUG (ASCII), causing the two
+    files to land in different %APPDATA% subfolders ('Söyle' vs 'Soyle') and
+    silently desyncing the user's data after the WhisperFlow → Söyle rebrand.
+    """
+    assert default_dictionary_path().parent == default_config_path().parent
+    assert default_dictionary_path().name == "dictionary.toml"
 
 
 def test_add_and_persist(store: DictionaryStore) -> None:

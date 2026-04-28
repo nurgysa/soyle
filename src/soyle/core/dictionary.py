@@ -1,7 +1,7 @@
 """User custom-dictionary storage.
 
-Terms are persisted in ``%APPDATA%\\Söyle\\dictionary.toml`` as a
-simple list of strings. They are used in two places:
+Terms are persisted in ``%APPDATA%\\Soyle\\dictionary.toml`` (alongside
+``config.toml``) as a simple list of strings. They are used in two places:
 
 1. ``Transcriber`` passes them as the faster-whisper ``initial_prompt``
    so the decoder is biased toward the correct spelling.
@@ -21,15 +21,19 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import tomli_w
-from platformdirs import user_config_path
 
-APP_NAME = "Söyle"
+from soyle.core.config import default_config_path
+
 MAX_TERMS = 200  # faster-whisper initial_prompt tolerates ~224 tokens; leave headroom
 
 
 def default_dictionary_path() -> Path:
-    """Return ``%APPDATA%\\Söyle\\dictionary.toml`` on Windows."""
-    return user_config_path(APP_NAME, appauthor=False, roaming=True) / "dictionary.toml"
+    """Return ``%APPDATA%\\Soyle\\dictionary.toml`` on Windows.
+
+    Co-located with ``config.toml`` so all per-user state lives in one
+    folder. Inherits the ASCII-slug rule from ``config.default_config_path``.
+    """
+    return default_config_path().parent / "dictionary.toml"
 
 
 class DictionaryStore:
