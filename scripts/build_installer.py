@@ -24,7 +24,9 @@ import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-DIST = ROOT / "dist" / "Söyle"
+# ASCII slug — must match `--name Soyle` in build_exe.py and the
+# `..\dist\Soyle\*` glob in installer.iss [Files].
+DIST = ROOT / "dist" / "Soyle"
 RELEASE = ROOT / "release"
 ISS = ROOT / "installer" / "installer.iss"
 

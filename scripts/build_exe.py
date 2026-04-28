@@ -57,6 +57,12 @@ def build_cmd() -> list[str]:
     # footgun).
     collect_all = ("faster_whisper", "keyring")
 
+    # `--name Soyle` (ASCII, no umlaut) keeps the output exe filename and
+    # the dist directory friendly for CLI tooling, scripts, and the
+    # installer.iss [Files] glob. The umlauted brand "Söyle" is reserved
+    # for user-visible strings (window titles, tray tooltip, installer UI)
+    # and is set there explicitly. Don't change to "Söyle" without also
+    # updating installer.iss MyAppExeName / DefaultDirName / [Files] Source.
     cmd = [
         sys.executable,
         "-m",
@@ -65,7 +71,7 @@ def build_cmd() -> list[str]:
         "--windowed",
         f"--icon={SRC / 'assets' / 'icon.ico'}",
         "--name",
-        "Söyle",
+        "Soyle",
     ]
     for pkg in collect_all:
         cmd += ["--collect-all", pkg]
@@ -89,7 +95,7 @@ def main() -> int:
     if result.returncode != 0:
         return result.returncode
 
-    exe = DIST / "Söyle" / "Soyle.exe"
+    exe = DIST / "Soyle" / "Soyle.exe"
     print(f"\nBuild artifact: {exe}")
     print(f"Exists: {exe.exists()}")
     return 0
