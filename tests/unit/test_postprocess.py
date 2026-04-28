@@ -213,6 +213,104 @@ async def test_mode_rewrite_uses_rewrite_prompt(
     assert "POLISH-INSTRUCTIONS" not in seen["system"]
 
 
+@pytest.mark.asyncio
+@respx.mock
+async def test_mode_ai_prompt_uses_ai_prompt(
+    tmp_path: Path, pp_config: PostProcessConfig
+) -> None:
+    polish_path = tmp_path / "polish.md"
+    polish_path.write_text("POLISH-INSTRUCTIONS", encoding="utf-8")
+    ai_path = tmp_path / "ai_prompt.md"
+    ai_path.write_text("AI-PROMPT-INSTRUCTIONS", encoding="utf-8")
+
+    seen: dict[str, str] = {}
+
+    def capture(request: httpx.Request) -> httpx.Response:
+        import json as _json
+
+        body = _json.loads(request.content)
+        seen["system"] = body["messages"][0]["content"]
+        return _ok_response("converted to instruction")
+
+    respx.post(API_URL).mock(side_effect=capture)
+
+    pp_config.mode = "ai_prompt"
+    pp = PostProcess(
+        config=pp_config,
+        api_key="sk-test",
+        prompt_path=polish_path,
+        ai_prompt_path=ai_path,
+    )
+    await pp.polish("raw text", language="en")
+    assert "AI-PROMPT-INSTRUCTIONS" in seen["system"]
+    assert "POLISH-INSTRUCTIONS" not in seen["system"]
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_mode_plain_text_uses_plain_text_prompt(
+    tmp_path: Path, pp_config: PostProcessConfig
+) -> None:
+    polish_path = tmp_path / "polish.md"
+    polish_path.write_text("POLISH-INSTRUCTIONS", encoding="utf-8")
+    plain_path = tmp_path / "plain_text.md"
+    plain_path.write_text("PLAIN-TEXT-INSTRUCTIONS", encoding="utf-8")
+
+    seen: dict[str, str] = {}
+
+    def capture(request: httpx.Request) -> httpx.Response:
+        import json as _json
+
+        body = _json.loads(request.content)
+        seen["system"] = body["messages"][0]["content"]
+        return _ok_response("polished prose")
+
+    respx.post(API_URL).mock(side_effect=capture)
+
+    pp_config.mode = "plain_text"
+    pp = PostProcess(
+        config=pp_config,
+        api_key="sk-test",
+        prompt_path=polish_path,
+        plain_text_path=plain_path,
+    )
+    await pp.polish("raw text", language="en")
+    assert "PLAIN-TEXT-INSTRUCTIONS" in seen["system"]
+    assert "POLISH-INSTRUCTIONS" not in seen["system"]
+
+
+def test_set_mode_accepts_all_four_modes(
+    tmp_path: Path, pp_config: PostProcessConfig
+) -> None:
+    """Regression — set_mode used to validate only polish/rewrite."""
+    prompt = tmp_path / "p.md"
+    prompt.write_text("X", encoding="utf-8")
+    pp = PostProcess(config=pp_config, api_key=None, prompt_path=prompt)
+    for mode in ("polish", "rewrite", "ai_prompt", "plain_text"):
+        pp.set_mode(mode)
+        assert pp._config.mode == mode
+    with pytest.raises(ValueError):
+        pp.set_mode("nonsense")
+
+
+def test_missing_optional_prompts_fall_back_to_polish(
+    tmp_path: Path, pp_config: PostProcessConfig
+) -> None:
+    """If a mode-specific prompt file is missing, that mode reuses polish.
+
+    Keeps the app functional during development or after a botched install.
+    """
+    polish = tmp_path / "polish.md"
+    polish.write_text("POLISH-ONLY", encoding="utf-8")
+    pp = PostProcess(config=pp_config, api_key=None, prompt_path=polish)
+    # ai_prompt_path / plain_text_path / rewrite_prompt_path were not given,
+    # so all three modes should resolve to the polish text.
+    assert pp._prompts["polish"] == "POLISH-ONLY"
+    assert pp._prompts["rewrite"] == "POLISH-ONLY"
+    assert pp._prompts["ai_prompt"] == "POLISH-ONLY"
+    assert pp._prompts["plain_text"] == "POLISH-ONLY"
+
+
 # ---- Model presets + pricing ----
 
 def test_popular_models_is_curated_google_entries() -> None:

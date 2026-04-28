@@ -116,6 +116,8 @@ class SoyleApp(QObject):
             prompt_path=prompt_path(self._cfg.postprocess.prompt_file),
             dictionary_hint=self._dict_store.as_llm_instruction(),
             rewrite_prompt_path=prompt_path(self._cfg.postprocess.rewrite_prompt_file),
+            ai_prompt_path=prompt_path(self._cfg.postprocess.ai_prompt_file),
+            plain_text_path=prompt_path(self._cfg.postprocess.plain_text_file),
         )
         self._hotkey = HotkeyBox(
             bus=self._bus,
@@ -420,6 +422,8 @@ class SoyleApp(QObject):
             api_key=self._store.get_api_key(),
             prompt_path=prompt_path(self._cfg.postprocess.prompt_file),
             rewrite_prompt_path=prompt_path(self._cfg.postprocess.rewrite_prompt_file),
+            ai_prompt_path=prompt_path(self._cfg.postprocess.ai_prompt_file),
+            plain_text_path=prompt_path(self._cfg.postprocess.plain_text_file),
             dictionary_hint=self._dict_store.as_llm_instruction(),
         )
         self._injector.set_method(self._cfg.behavior.inject_method)

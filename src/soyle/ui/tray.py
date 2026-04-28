@@ -14,7 +14,16 @@ class TrayIcon(QObject):
     settings_requested = Signal()
     logs_requested = Signal()
     quit_requested = Signal()
-    mode_changed = Signal(str)  # "polish" or "rewrite"
+    mode_changed = Signal(str)  # one of "polish", "rewrite", "ai_prompt", "plain_text"
+
+    # Mode id → human label shown in the tray submenu and tooltip. Order is
+    # the menu order. Keep in sync with PostProcessConfig.mode Literal.
+    _MODE_LABELS = (
+        ("polish", "Polish"),
+        ("rewrite", "Rewrite"),
+        ("ai_prompt", "AI Prompt"),
+        ("plain_text", "Plain Text"),
+    )
 
     def __init__(self) -> None:
         super().__init__()
@@ -23,22 +32,21 @@ class TrayIcon(QObject):
 
         menu = QMenu()
 
-        # Mode submenu — quick toggle between polish / rewrite.
+        # Mode submenu — exclusive group, one checkmark at a time.
         mode_menu = menu.addMenu("Режим")
         self._mode_group = QActionGroup(self)
         self._mode_group.setExclusive(True)
-        self._act_polish = QAction("Polish", self)
-        self._act_polish.setCheckable(True)
-        self._act_polish.setData("polish")
-        self._act_polish.triggered.connect(lambda: self.mode_changed.emit("polish"))
-        self._act_rewrite = QAction("Rewrite", self)
-        self._act_rewrite.setCheckable(True)
-        self._act_rewrite.setData("rewrite")
-        self._act_rewrite.triggered.connect(lambda: self.mode_changed.emit("rewrite"))
-        self._mode_group.addAction(self._act_polish)
-        self._mode_group.addAction(self._act_rewrite)
-        mode_menu.addAction(self._act_polish)
-        mode_menu.addAction(self._act_rewrite)
+        self._mode_actions: dict[str, QAction] = {}
+        for mode_id, label in self._MODE_LABELS:
+            act = QAction(label, self)
+            act.setCheckable(True)
+            act.setData(mode_id)
+            # Bind mode_id at lambda creation time so each action emits its
+            # own value (otherwise the loop variable late-binds to the last).
+            act.triggered.connect(lambda _checked=False, m=mode_id: self.mode_changed.emit(m))
+            self._mode_group.addAction(act)
+            mode_menu.addAction(act)
+            self._mode_actions[mode_id] = act
 
         menu.addSeparator()
 
@@ -74,9 +82,9 @@ class TrayIcon(QObject):
 
     def set_mode(self, mode: str) -> None:
         """Reflect current LLM mode in the submenu checkmark and tooltip."""
-        self._act_polish.setChecked(mode == "polish")
-        self._act_rewrite.setChecked(mode == "rewrite")
-        label = "Rewrite" if mode == "rewrite" else "Polish"
+        for mode_id, act in self._mode_actions.items():
+            act.setChecked(mode_id == mode)
+        label = dict(self._MODE_LABELS).get(mode, "Polish")
         self._tray.setToolTip(f"Söyle — режим {label}")
 
     def toast(self, title: str, message: str, level: str = "info") -> None:

@@ -63,13 +63,19 @@ class PostProcessConfig(BaseModel):
     timeout_seconds: float = Field(default=5.0, gt=0, le=30)
     retries: int = Field(default=3, ge=0, le=10)
     temperature: float = Field(default=0.0, ge=0, le=2)
+    # Four LLM modes — each loads its own prompt file from prompts/:
+    #   - 'polish'     : conservative — strip fillers, fix punctuation, keep structure.
+    #   - 'rewrite'    : active — reformulate dictation into a well-formed sentence.
+    #   - 'ai_prompt'  : turn dictation into a clean instruction for an LLM
+    #                    (Claude / ChatGPT / Gemini). Imperative, structured,
+    #                    preserves code/file paths verbatim.
+    #   - 'plain_text' : turn dictation into clean prose for documents (Word,
+    #                    email). Natural paragraphs, no instruction language.
+    mode: Literal["polish", "rewrite", "ai_prompt", "plain_text"] = "polish"
     prompt_file: str = "polish_v1.md"
-    # Two LLM modes:
-    #   - 'polish'  : conservative — strip fillers, fix punctuation, keep structure
-    #   - 'rewrite' : active       — reformulate into a well-formed sentence
-    # Each mode loads its own prompt file from prompts/.
-    mode: Literal["polish", "rewrite"] = "polish"
     rewrite_prompt_file: str = "rewrite_v1.md"
+    ai_prompt_file: str = "ai_prompt_v1.md"
+    plain_text_file: str = "plain_text_v1.md"
 
 
 class UIConfig(BaseModel):

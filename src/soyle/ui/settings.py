@@ -208,6 +208,8 @@ class SettingsWindow(QMainWindow):
         self._pp_mode = QComboBox()
         self._pp_mode.addItem("Polish — чистка, пунктуация, без переформулирования", "polish")
         self._pp_mode.addItem("Rewrite — активная переформулировка в связный текст", "rewrite")
+        self._pp_mode.addItem("AI Prompt — превратить речь в инструкцию для Claude/ChatGPT/Gemini", "ai_prompt")
+        self._pp_mode.addItem("Plain Text — текст для документа (Word, email, мессенджер)", "plain_text")
         idx = self._pp_mode.findData(self._cfg.postprocess.mode)
         self._pp_mode.setCurrentIndex(max(0, idx))
         layout.addRow("Режим:", self._pp_mode)

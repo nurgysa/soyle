@@ -101,6 +101,8 @@ class PostProcess:
     - LLM output that looks refused or significantly longer than input → fallback.
     """
 
+    SUPPORTED_MODES = ("polish", "rewrite", "ai_prompt", "plain_text")
+
     def __init__(
         self,
         config: PostProcessConfig,
@@ -108,30 +110,58 @@ class PostProcess:
         prompt_path: Path,
         dictionary_hint: str = "",
         rewrite_prompt_path: Path | None = None,
+        ai_prompt_path: Path | None = None,
+        plain_text_path: Path | None = None,
     ) -> None:
         self._config = config
         self._api_key = api_key
-        self._polish_prompt = (
-            prompt_path.read_text(encoding="utf-8") if prompt_path.exists() else ""
-        )
-        if rewrite_prompt_path is not None and rewrite_prompt_path.exists():
-            self._rewrite_prompt = rewrite_prompt_path.read_text(encoding="utf-8")
-        else:
-            # Fallback: if rewrite prompt missing, rewrite mode behaves like polish.
-            self._rewrite_prompt = self._polish_prompt
         self._dictionary_hint = dictionary_hint
+        self._prompts: dict[str, str] = {}
+        self._load_prompts(
+            polish=prompt_path,
+            rewrite=rewrite_prompt_path,
+            ai_prompt=ai_prompt_path,
+            plain_text=plain_text_path,
+        )
+
+    def _load_prompts(
+        self,
+        *,
+        polish: Path,
+        rewrite: Path | None,
+        ai_prompt: Path | None,
+        plain_text: Path | None,
+    ) -> None:
+        """(Re)load all four prompt files into self._prompts.
+
+        Polish is the anchor — it must exist, and any other mode whose file
+        is missing or unreadable falls back to the polish text. This keeps
+        the app functional even if a prompt file is deleted, and matches
+        the prior single-fallback behavior for rewrite.
+        """
+        polish_text = polish.read_text(encoding="utf-8") if polish.exists() else ""
+        self._prompts["polish"] = polish_text
+        for mode, path in (
+            ("rewrite", rewrite),
+            ("ai_prompt", ai_prompt),
+            ("plain_text", plain_text),
+        ):
+            if path is not None and path.exists():
+                self._prompts[mode] = path.read_text(encoding="utf-8")
+            else:
+                self._prompts[mode] = polish_text
 
     def set_dictionary_hint(self, hint: str) -> None:
         """Update the per-user glossary clause appended to the system prompt."""
         self._dictionary_hint = hint
 
     def set_mode(self, mode: str) -> None:
-        """Switch between 'polish' and 'rewrite' without rebuilding the object.
+        """Switch the active mode without rebuilding the object.
 
         Validated upstream by `PostProcessConfig`'s Literal — callers should
-        only pass "polish" or "rewrite".
+        only pass one of SUPPORTED_MODES.
         """
-        if mode not in ("polish", "rewrite"):
+        if mode not in self.SUPPORTED_MODES:
             raise ValueError(f"unknown mode: {mode!r}")
         self._config.mode = mode  # type: ignore[assignment]
 
@@ -142,6 +172,8 @@ class PostProcess:
         api_key: str | None,
         prompt_path: Path,
         rewrite_prompt_path: Path | None = None,
+        ai_prompt_path: Path | None = None,
+        plain_text_path: Path | None = None,
         dictionary_hint: str = "",
     ) -> None:
         """Refresh all settings in place. Use from the config-reload path so
@@ -150,18 +182,17 @@ class PostProcess:
         """
         self._config = config
         self._api_key = api_key
-        self._polish_prompt = (
-            prompt_path.read_text(encoding="utf-8") if prompt_path.exists() else ""
-        )
-        if rewrite_prompt_path is not None and rewrite_prompt_path.exists():
-            self._rewrite_prompt = rewrite_prompt_path.read_text(encoding="utf-8")
-        else:
-            self._rewrite_prompt = self._polish_prompt
         self._dictionary_hint = dictionary_hint
+        self._load_prompts(
+            polish=prompt_path,
+            rewrite=rewrite_prompt_path,
+            ai_prompt=ai_prompt_path,
+            plain_text=plain_text_path,
+        )
 
     @property
     def _base_prompt(self) -> str:
-        return self._rewrite_prompt if self._config.mode == "rewrite" else self._polish_prompt
+        return self._prompts.get(self._config.mode, self._prompts["polish"])
 
     @property
     def _system_prompt(self) -> str:
