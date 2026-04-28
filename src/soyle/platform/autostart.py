@@ -20,7 +20,13 @@ def enable_autostart(exe_path: str, app_name: str = DEFAULT_APP_NAME) -> None:
     # that might pass partially-constructed strings.
     if '"' in exe_path or "\x00" in exe_path:
         raise ValueError(f"invalid characters in exe_path: {exe_path!r}")
-    with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_SET_VALUE) as key:
+    # CreateKeyEx (vs OpenKey): creates the Run key if missing, opens it if
+    # present. The Run key normally exists on every desktop Windows install
+    # but can be missing on fresh CI runner images and on freshly-provisioned
+    # user profiles that haven't booted Explorer yet.
+    with winreg.CreateKeyEx(
+        winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_SET_VALUE
+    ) as key:
         winreg.SetValueEx(key, app_name, 0, winreg.REG_SZ, f'"{exe_path}"')
 
 
