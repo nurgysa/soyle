@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 from soyle.core.config import Config, ConfigStore
 from soyle.core.dictionary import DictionaryStore
 from soyle.core.postprocess import POPULAR_MODELS
+from soyle.core.transcriber import WHISPER_MODELS
 from soyle.ui.shortcut_capture import ShortcutCaptureDialog
 
 # Curated list of known-good push-to-talk keys. Editable combobox
@@ -158,7 +159,21 @@ class SettingsWindow(QMainWindow):
     def _build_whisper_tab(self) -> QWidget:
         w = QWidget()
         layout = QFormLayout(w)
-        self._w_model = QLineEdit(self._cfg.whisper.model)
+
+        # Editable combobox: curated presets + free-text fallback for any
+        # checkpoint name faster-whisper accepts (Hugging Face IDs,
+        # Systran/faster-* mirrors, etc.). Same pattern as the LLM model
+        # picker.
+        self._w_model = QComboBox()
+        self._w_model.setEditable(True)
+        for preset in WHISPER_MODELS:
+            self._w_model.addItem(preset.display_label, preset.model_id)
+        current = self._cfg.whisper.model
+        preset_idx = self._w_model.findData(current)
+        if preset_idx >= 0:
+            self._w_model.setCurrentIndex(preset_idx)
+        else:
+            self._w_model.setEditText(current)
         layout.addRow("Модель:", self._w_model)
         self._w_device = QComboBox()
         self._w_device.addItems(["auto", "cuda", "cpu"])
@@ -412,18 +427,20 @@ class SettingsWindow(QMainWindow):
 
     # ---- Helpers ----
 
-    def _resolve_model_id(self) -> str:
+    @staticmethod
+    def _resolve_combo_model_id(combo: QComboBox) -> str:
         """Return model id: preset `data` if selected unchanged, else typed text.
 
-        Preset items display as "<id>  ·  <label>  ·  $in / $out per M". If
-        the user typed a custom id, we return the part before the first "  ·  ".
+        Preset items display as "<id>  ·  <metadata>". If the user typed a
+        custom id, return the part before the first "  ·  ". Used by both
+        the LLM model picker and the Whisper model picker — same shape.
         """
-        idx = self._pp_model.currentIndex()
+        idx = combo.currentIndex()
         if idx >= 0:
-            data = self._pp_model.itemData(idx)
-            if isinstance(data, str) and self._pp_model.itemText(idx) == self._pp_model.currentText():
+            data = combo.itemData(idx)
+            if isinstance(data, str) and combo.itemText(idx) == combo.currentText():
                 return data
-        return self._pp_model.currentText().strip().split("  ·  ", 1)[0].strip()
+        return combo.currentText().strip().split("  ·  ", 1)[0].strip()
 
     # ---- Save ----
 
@@ -436,14 +453,14 @@ class SettingsWindow(QMainWindow):
         self._cfg.audio.max_recording_seconds = self._audio_max.value()
         self._cfg.audio.vad_enabled = self._audio_vad.isChecked()
 
-        self._cfg.whisper.model = self._w_model.text().strip()
+        self._cfg.whisper.model = self._resolve_combo_model_id(self._w_model)
         self._cfg.whisper.device = self._w_device.currentText()  # type: ignore[assignment]
         self._cfg.whisper.compute_type = self._w_compute.currentText()  # type: ignore[assignment]
         self._cfg.whisper.language = self._w_language.currentData()
 
         self._cfg.postprocess.enabled = self._pp_enabled.isChecked()
         self._cfg.postprocess.mode = self._pp_mode.currentData()  # type: ignore[assignment]
-        self._cfg.postprocess.model = self._resolve_model_id()
+        self._cfg.postprocess.model = self._resolve_combo_model_id(self._pp_model)
         self._cfg.postprocess.timeout_seconds = self._pp_timeout.value()
 
         new_key = self._pp_api_key.text().strip()

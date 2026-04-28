@@ -1,7 +1,12 @@
 """Tests for Transcriber's pure text-post-processing helpers."""
 from __future__ import annotations
 
-from soyle.core.transcriber import Transcriber, filter_hallucinations, normalize_whitespace
+from soyle.core.transcriber import (
+    WHISPER_MODELS,
+    Transcriber,
+    filter_hallucinations,
+    normalize_whitespace,
+)
 
 
 def test_normalize_whitespace_collapses_spaces() -> None:
@@ -34,6 +39,21 @@ def test_filter_hallucinations_handles_empty() -> None:
 def test_filter_hallucinations_preserves_real_speech() -> None:
     text = "Привет, это обычное предложение."
     assert filter_hallucinations(text) == text
+
+
+def test_whisper_models_cover_expected_checkpoints() -> None:
+    """The dropdown must offer the four canonical multilingual checkpoints.
+
+    Order matters for UX (recommended at the top), and labels feed the UI
+    directly — keep the contract pinned so a refactor can't silently drop
+    a model or swap the recommended one.
+    """
+    ids = [p.model_id for p in WHISPER_MODELS]
+    assert ids == ["large-v3-turbo", "large-v3", "medium", "small"]
+    # display_label format must contain the model id (used by the parser
+    # in SettingsWindow._resolve_combo_model_id when user types custom).
+    for preset in WHISPER_MODELS:
+        assert preset.display_label.startswith(preset.model_id + "  ·  ")
 
 
 def test_set_language_updates_without_loading_model() -> None:

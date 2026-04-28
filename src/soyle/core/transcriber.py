@@ -87,6 +87,50 @@ def _count_leading_repeats(words: list[str], phrase_len: int) -> int:
     return count
 
 
+@dataclass(frozen=True)
+class WhisperModelPreset:
+    """Curated Whisper checkpoint with UX hints.
+
+    `model_id` is what gets passed to `WhisperModel(...)`. The other fields
+    are for the settings dropdown — not used at inference.
+    """
+    model_id: str
+    params: str  # e.g. "244M", "1.55B"
+    note: str    # multilingual quality/speed hint shown in the dropdown
+
+    @property
+    def display_label(self) -> str:
+        return f"{self.model_id}  ·  {self.params}  ·  {self.note}"
+
+
+# Order is what the dropdown shows top-to-bottom. Keep the recommended
+# default (large-v3-turbo) prominent — it's the best multilingual quality
+# / speed trade-off for KZ/RU dictation. Notes target a Russian-speaking
+# user picking between speed and recognition quality.
+WHISPER_MODELS: tuple[WhisperModelPreset, ...] = (
+    WhisperModelPreset(
+        "large-v3-turbo",
+        params="809M",
+        note="рекомендую — ≈large-v3 по качеству, ~3× быстрее",
+    ),
+    WhisperModelPreset(
+        "large-v3",
+        params="1.55B",
+        note="лучшее качество, тяжело без GPU",
+    ),
+    WhisperModelPreset(
+        "medium",
+        params="769M",
+        note="компромисс — KZ норм, средне по скорости",
+    ),
+    WhisperModelPreset(
+        "small",
+        params="244M",
+        note="быстро, но KZ слабый — мультиязычно не подходит",
+    ),
+)
+
+
 @dataclass
 class TranscriptResult:
     raw_text: str
