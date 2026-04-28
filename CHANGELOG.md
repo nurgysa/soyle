@@ -7,10 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Whisper language selector in Settings → Whisper (Auto / Қазақша / Русский /
+  English). "Auto" lets Whisper detect per utterance; an explicit choice
+  forces the language and avoids cross-language mis-detection (e.g. short
+  Kazakh phrase mis-tagged as Turkish). Hot-swappable — applies on the next
+  recording without restarting the app.
+- LLM polish and rewrite prompts now declare Kazakh as a first-class
+  language alongside Russian and English. Both prompts have an explicit
+  KZ+RU+EN code-switching rule, KZ-specific filler-word list, and three
+  draft Kazakh examples to anchor model behavior.
+
 ### Planned
 
-- Whisper language selector in Settings (Kazakh / Russian / English / Auto).
-- LLM polish prompt updated to preserve Kazakh + Russian + English code-switching.
 - OpenRouter login via OAuth 2.0 PKCE — no more manual API key copy-paste.
 - UI localization scaffold (Kazakh / Russian / English).
 - Cross-device sync via Google Drive AppDataFolder.
