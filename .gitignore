@@ -19,6 +19,11 @@ build/
 .idea/
 *.swp
 
+# Claude Code per-machine state
+# settings.local.json holds the machine-specific Bash permission allowlist
+# and other session preferences — must not leak into the shared repo.
+.claude/
+
 # App-local
 .env
 vendor/cudnn/
