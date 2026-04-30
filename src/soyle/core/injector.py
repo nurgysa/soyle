@@ -52,6 +52,27 @@ _TERMINAL_CLASSES = frozenset({
     "WezTermWindow",
 })
 
+# Win32 class names of foreground windows whose widget toolkit is known to
+# IGNORE synthesized Ctrl+V. We auto-route inject calls for these targets
+# through keystroke mode regardless of the user's configured inject_method,
+# because the alternative — silent failure of clipboard paste — is the
+# worst possible UX (text is "lost" and the user has no signal why).
+#
+# Add new entries here when discovered. Each one wants a comment explaining
+# WHY synthetic Ctrl+V doesn't work in that widget — it isn't always
+# obvious, and future maintainers will want to know whether to remove the
+# entry if upstream fixes the bug.
+_KEYSTROKE_REQUIRED_CLASSES = frozenset({
+    # tkinter / customtkinter — `tkinter.Text` has no default `<Control-v>`
+    # binding (unlike `tkinter.Entry`), so synthesized Ctrl+V is received
+    # as raw keyboard events the widget has no handler for and the paste
+    # dies silently. Affects every customtkinter Text-based widget too
+    # (CTkTextbox, the chat-style widgets in customtkinter samples) since
+    # they all inherit from `tkinter.Text`.
+    "TkTopLevel",
+    "TkChild",
+})
+
 
 def _sanitize_for_injection(text: str) -> str:
     """Remove non-printable control characters from text before injection.
@@ -148,10 +169,28 @@ class Injector:
                 success=False, method="paste", target_changed=False, blocked=True
             )
 
+        # Auto-route around widgets that ignore synthesized Ctrl+V. Keep the
+        # user's configured `self._method` intact — this is per-call routing,
+        # not a persistent preference change. Settings UI / tray menu still
+        # show the configured method correctly; the override is silent and
+        # observable only via the `inject_auto_keystroke` log event.
+        effective_method = self._method
+        if (
+            effective_method == "clipboard"
+            and target_class in _KEYSTROKE_REQUIRED_CLASSES
+        ):
+            effective_method = "keystroke"
+            _log.info(
+                "inject_auto_keystroke",
+                target_class=target_class,
+                text_len=len(text),
+                reason="ctrl_v_unsupported_widget",
+            )
+
         # Opt-in: type each character directly, never touching the clipboard.
         # Trade-off — slower on long strings and sensitive to user's own
         # keystrokes landing in the middle.
-        if self._method == "keystroke":
+        if effective_method == "keystroke":
             try:
                 keyboard.write(text, delay=0)
             except Exception as exc:

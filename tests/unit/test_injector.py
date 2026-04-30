@@ -243,3 +243,119 @@ def test_set_method_rejects_invalid_value() -> None:
     injector = Injector(bus=EventBus())
     with pytest.raises(ValueError):
         injector.set_method("telepathy")
+
+
+# ---- M2: Tk auto-fallback — clipboard method auto-routes to keystroke
+#         for widgets that ignore synthetic Ctrl+V (tkinter, customtkinter).
+
+def test_clipboard_mode_auto_falls_back_to_keystroke_for_tk(qtbot, mocker) -> None:
+    """`TkTopLevel` target → keystroke override fires; clipboard untouched.
+
+    Regression — without this routing, customtkinter `CTkTextbox` widgets
+    silently swallow synthetic Ctrl+V because `tkinter.Text` has no default
+    `<Control-v>` binding. The user sees the textbox stay empty after a
+    successful transcribe + polish, with no signal what went wrong.
+    """
+    mock_copy = mocker.patch("soyle.core.injector.pyperclip.copy")
+    mocker.patch("soyle.core.injector.pyperclip.paste", return_value="prev")
+    mock_sendv = mocker.patch("soyle.core.injector.send_ctrl_v")
+    mock_wm = mocker.patch("soyle.core.injector.send_wm_paste")
+    mock_write = mocker.patch("soyle.core.injector.keyboard.write")
+    mocker.patch("soyle.core.injector.get_foreground_hwnd", return_value=1234)
+    mocker.patch(
+        "soyle.core.injector.get_window_class_name", return_value="TkTopLevel"
+    )
+
+    injector = Injector(bus=EventBus(), method="clipboard")
+    result = injector.inject("задача срочная", target_hwnd=injector.capture_target())
+
+    # Routed through keystroke despite clipboard config:
+    assert result.success is True
+    assert result.method == "keystroke"
+    mock_write.assert_called_once_with("задача срочная", delay=0)
+    # Clipboard path never touched — the whole point of the auto-route:
+    mock_copy.assert_not_called()
+    mock_sendv.assert_not_called()
+    mock_wm.assert_not_called()
+    # User's persisted preference was NOT mutated — Settings UI still shows
+    # "clipboard" correctly. The override is per-call routing only.
+    assert injector._method == "clipboard"
+
+
+def test_clipboard_mode_does_not_auto_route_for_normal_targets(qtbot, mocker) -> None:
+    """Non-Tk target with clipboard mode → existing clipboard path still runs.
+
+    Guards against a refactor that would turn the auto-route into a blanket
+    "always keystroke" behavior.
+    """
+    mocker.patch("soyle.core.injector.pyperclip.copy")
+    mocker.patch("soyle.core.injector.pyperclip.paste", return_value="prev")
+    mock_sendv = mocker.patch("soyle.core.injector.send_ctrl_v")
+    mocker.patch("soyle.core.injector.send_wm_paste", return_value=False)
+    mocker.patch("soyle.core.injector.find_edit_child", return_value=0)
+    mock_write = mocker.patch("soyle.core.injector.keyboard.write")
+    mocker.patch("soyle.core.injector.get_foreground_hwnd", return_value=1234)
+    mocker.patch(
+        "soyle.core.injector.get_window_class_name",
+        return_value="Chrome_WidgetWin_1",
+    )
+
+    injector = Injector(bus=EventBus(), method="clipboard", restore_delay_ms=10)
+    result = injector.inject("hello", target_hwnd=injector.capture_target())
+
+    # Existing Ctrl+V path runs:
+    assert result.success is True
+    assert result.method == "paste"
+    mock_sendv.assert_called_once()
+    # No keystroke override:
+    mock_write.assert_not_called()
+
+
+def test_keystroke_mode_for_tk_target_runs_normally(qtbot, mocker) -> None:
+    """Already-keystroke mode + Tk target → just keystroke, no override path.
+
+    The auto-route code path is irrelevant when the user already chose
+    keystroke globally — they'd just get keystroke twice if we weren't
+    careful. Ensures the override only fires for `clipboard` callers.
+    """
+    mock_copy = mocker.patch("soyle.core.injector.pyperclip.copy")
+    mock_write = mocker.patch("soyle.core.injector.keyboard.write")
+    mocker.patch("soyle.core.injector.get_foreground_hwnd", return_value=1234)
+    mocker.patch(
+        "soyle.core.injector.get_window_class_name", return_value="TkTopLevel"
+    )
+
+    injector = Injector(bus=EventBus(), method="keystroke")
+    result = injector.inject("hi", target_hwnd=injector.capture_target())
+
+    assert result.success is True
+    assert result.method == "keystroke"
+    mock_write.assert_called_once_with("hi", delay=0)
+    mock_copy.assert_not_called()
+
+
+def test_terminal_blocklist_priority_over_keystroke_auto_route(qtbot, mocker) -> None:
+    """If a target somehow matches both lists, terminal block wins.
+
+    Practically impossible (the lists don't overlap today) but guards
+    against a future entry being added to both — terminal blocking exists
+    because newlines auto-execute commands, which is strictly worse than a
+    silent Tk paste failure. Order in `inject()` must keep terminal first.
+    """
+    mocker.patch("soyle.core.injector.pyperclip.copy")
+    mocker.patch("soyle.core.injector.pyperclip.paste", return_value="")
+    mock_sendv = mocker.patch("soyle.core.injector.send_ctrl_v")
+    mock_write = mocker.patch("soyle.core.injector.keyboard.write")
+    mocker.patch("soyle.core.injector.get_foreground_hwnd", return_value=1234)
+    mocker.patch(
+        "soyle.core.injector.get_window_class_name",
+        return_value="ConsoleWindowClass",
+    )
+
+    injector = Injector(bus=EventBus(), method="clipboard")
+    result = injector.inject("echo hi\n", target_hwnd=injector.capture_target())
+
+    # Terminal block wins — neither paste nor keystroke fires.
+    assert result.blocked is True
+    mock_sendv.assert_not_called()
+    mock_write.assert_not_called()
