@@ -279,14 +279,117 @@ async def test_mode_plain_text_uses_plain_text_prompt(
     assert "POLISH-INSTRUCTIONS" not in seen["system"]
 
 
-def test_set_mode_accepts_all_four_modes(
+@pytest.mark.asyncio
+@respx.mock
+async def test_task_mode_short_input_not_flagged_as_too_long(
+    tmp_path: Path, pp_config: PostProcessConfig
+) -> None:
+    """Short dictations must survive the hallucination-length guard in task mode.
+
+    Regression — without `MAX_LENGTH_RATIO_BY_MODE`, a 24-char input that
+    legitimately produces a ~90-char structured 4-field output would trip the
+    default 3× ratio and silently fall back to raw text, making task mode
+    useless for short tasks ("надо починить баг", "fix login").
+    """
+    polish_path = tmp_path / "polish.md"
+    polish_path.write_text("POLISH-INSTRUCTIONS", encoding="utf-8")
+    task_path = tmp_path / "task.md"
+    task_path.write_text("TASK-INSTRUCTIONS", encoding="utf-8")
+
+    structured = (
+        "Задача: Починить баг с логином\n\n"
+        "Департамент: Engineering\n\n"
+        "Приоритет: P0\n\n"
+        "Описание: Срочно, юзеры жалуются."
+    )
+    respx.post(API_URL).mock(return_value=_ok_response(structured))
+
+    pp_config.mode = "task"
+    pp = PostProcess(
+        config=pp_config,
+        api_key="sk-test",
+        prompt_path=polish_path,
+        task_prompt_path=task_path,
+    )
+    short_raw = "надо срочно починить баг"  # 24 chars
+    result = await pp.polish(short_raw, language="ru")
+    # Output is ~3.7× input, but task mode allows 6× — must NOT fall back.
+    assert result.fallback is False, f"unexpected fallback: reason={result.reason}"
+    assert result.text == structured
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_polish_mode_still_enforces_3x_ratio(
+    tmp_path: Path, pp_config: PostProcessConfig
+) -> None:
+    """Per-mode ratio override must not loosen the polish-mode default.
+
+    Regression — guards against future "just bump the ratio for everyone"
+    refactors that would weaken the hallucination guard for the default mode.
+    """
+    polish_path = tmp_path / "polish.md"
+    polish_path.write_text("POLISH-INSTRUCTIONS", encoding="utf-8")
+    # 4× the input: still well within the 6× task ratio but exceeds the
+    # 3× polish ratio — must trigger fallback when mode is polish.
+    long_reply = "a" * 100
+    respx.post(API_URL).mock(return_value=_ok_response(long_reply))
+
+    pp_config.mode = "polish"
+    pp = PostProcess(config=pp_config, api_key="sk-test", prompt_path=polish_path)
+    short_raw = "x" * 25  # 100 / 25 = 4.0 > 3.0
+    result = await pp.polish(short_raw, language="en")
+    assert result.fallback is True
+    assert result.reason == "too_long"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_mode_task_uses_task_prompt(
+    tmp_path: Path, pp_config: PostProcessConfig
+) -> None:
+    """`task` mode must load and use task_v1.md, not the polish anchor."""
+    polish_path = tmp_path / "polish.md"
+    polish_path.write_text("POLISH-INSTRUCTIONS", encoding="utf-8")
+    task_path = tmp_path / "task.md"
+    task_path.write_text("TASK-INSTRUCTIONS", encoding="utf-8")
+
+    seen: dict[str, str] = {}
+
+    def capture(request: httpx.Request) -> httpx.Response:
+        import json as _json
+
+        body = _json.loads(request.content)
+        seen["system"] = body["messages"][0]["content"]
+        # Realistic shape — 4 fields with blank lines between them.
+        return _ok_response(
+            "Задача: Починить баг\n\nДепартамент: Engineering\n\nПриоритет: P0\n\nОписание: Срочно."
+        )
+
+    respx.post(API_URL).mock(side_effect=capture)
+
+    pp_config.mode = "task"
+    pp = PostProcess(
+        config=pp_config,
+        api_key="sk-test",
+        prompt_path=polish_path,
+        task_prompt_path=task_path,
+    )
+    result = await pp.polish("надо срочно починить баг", language="ru")
+    assert "TASK-INSTRUCTIONS" in seen["system"]
+    assert "POLISH-INSTRUCTIONS" not in seen["system"]
+    assert "Задача:" in result.text
+    assert "Приоритет: P0" in result.text
+
+
+def test_set_mode_accepts_all_five_modes(
     tmp_path: Path, pp_config: PostProcessConfig
 ) -> None:
     """Regression — set_mode used to validate only polish/rewrite."""
     prompt = tmp_path / "p.md"
     prompt.write_text("X", encoding="utf-8")
     pp = PostProcess(config=pp_config, api_key=None, prompt_path=prompt)
-    for mode in ("polish", "rewrite", "ai_prompt", "plain_text"):
+    for mode in ("polish", "rewrite", "ai_prompt", "plain_text", "task"):
         pp.set_mode(mode)
         assert pp._config.mode == mode
     with pytest.raises(ValueError):
@@ -303,12 +406,13 @@ def test_missing_optional_prompts_fall_back_to_polish(
     polish = tmp_path / "polish.md"
     polish.write_text("POLISH-ONLY", encoding="utf-8")
     pp = PostProcess(config=pp_config, api_key=None, prompt_path=polish)
-    # ai_prompt_path / plain_text_path / rewrite_prompt_path were not given,
-    # so all three modes should resolve to the polish text.
+    # rewrite_prompt_path / ai_prompt_path / plain_text_path / task_prompt_path
+    # were not given, so all four modes should resolve to the polish text.
     assert pp._prompts["polish"] == "POLISH-ONLY"
     assert pp._prompts["rewrite"] == "POLISH-ONLY"
     assert pp._prompts["ai_prompt"] == "POLISH-ONLY"
     assert pp._prompts["plain_text"] == "POLISH-ONLY"
+    assert pp._prompts["task"] == "POLISH-ONLY"
 
 
 # ---- Model presets + pricing ----

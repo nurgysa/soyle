@@ -234,6 +234,7 @@ class SettingsWindow(QMainWindow):
         self._pp_mode.addItem("Rewrite — активная переформулировка в связный текст", "rewrite")
         self._pp_mode.addItem("AI Prompt — превратить речь в инструкцию для Claude/ChatGPT/Gemini", "ai_prompt")
         self._pp_mode.addItem("Plain Text — текст для документа (Word, email, мессенджер)", "plain_text")
+        self._pp_mode.addItem("Task — структурированная задача (Задача / Департамент / Приоритет / Описание)", "task")
         idx = self._pp_mode.findData(self._cfg.postprocess.mode)
         self._pp_mode.setCurrentIndex(max(0, idx))
         layout.addRow("Режим:", self._pp_mode)

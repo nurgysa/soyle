@@ -73,6 +73,15 @@ REFUSAL_MARKERS = (
 )
 MAX_LENGTH_RATIO = 3.0  # output char estimate / input char estimate must be ≤ this
 
+# Per-mode override of MAX_LENGTH_RATIO for the hallucination-length guard.
+# `task` mode produces a structured 4-field output where labels and blank-line
+# separators add ~50 chars of overhead before any content — a strict 3× ratio
+# would falsely flag short dictations like "надо починить баг" as runaway.
+# Modes not listed here use the default MAX_LENGTH_RATIO.
+MAX_LENGTH_RATIO_BY_MODE: dict[str, float] = {
+    "task": 6.0,
+}
+
 
 @dataclass
 class PolishResult:
@@ -101,7 +110,7 @@ class PostProcess:
     - LLM output that looks refused or significantly longer than input → fallback.
     """
 
-    SUPPORTED_MODES = ("polish", "rewrite", "ai_prompt", "plain_text")
+    SUPPORTED_MODES = ("polish", "rewrite", "ai_prompt", "plain_text", "task")
 
     def __init__(
         self,
@@ -112,6 +121,7 @@ class PostProcess:
         rewrite_prompt_path: Path | None = None,
         ai_prompt_path: Path | None = None,
         plain_text_path: Path | None = None,
+        task_prompt_path: Path | None = None,
     ) -> None:
         self._config = config
         self._api_key = api_key
@@ -122,6 +132,7 @@ class PostProcess:
             rewrite=rewrite_prompt_path,
             ai_prompt=ai_prompt_path,
             plain_text=plain_text_path,
+            task=task_prompt_path,
         )
 
     def _load_prompts(
@@ -131,8 +142,9 @@ class PostProcess:
         rewrite: Path | None,
         ai_prompt: Path | None,
         plain_text: Path | None,
+        task: Path | None,
     ) -> None:
-        """(Re)load all four prompt files into self._prompts.
+        """(Re)load all five prompt files into self._prompts.
 
         Polish is the anchor — it must exist, and any other mode whose file
         is missing or unreadable falls back to the polish text. This keeps
@@ -145,6 +157,7 @@ class PostProcess:
             ("rewrite", rewrite),
             ("ai_prompt", ai_prompt),
             ("plain_text", plain_text),
+            ("task", task),
         ):
             if path is not None and path.exists():
                 self._prompts[mode] = path.read_text(encoding="utf-8")
@@ -174,6 +187,7 @@ class PostProcess:
         rewrite_prompt_path: Path | None = None,
         ai_prompt_path: Path | None = None,
         plain_text_path: Path | None = None,
+        task_prompt_path: Path | None = None,
         dictionary_hint: str = "",
     ) -> None:
         """Refresh all settings in place. Use from the config-reload path so
@@ -188,6 +202,7 @@ class PostProcess:
             rewrite=rewrite_prompt_path,
             ai_prompt=ai_prompt_path,
             plain_text=plain_text_path,
+            task=task_prompt_path,
         )
 
     @property
@@ -241,7 +256,8 @@ class PostProcess:
         cleaned = reply.strip()
         if self._looks_refused(cleaned):
             return self._fallback(raw_text, reason="refused", latency_ms=latency_ms)
-        if self._too_long(raw_text, cleaned):
+        max_ratio = MAX_LENGTH_RATIO_BY_MODE.get(self._config.mode, MAX_LENGTH_RATIO)
+        if self._too_long(raw_text, cleaned, max_ratio=max_ratio):
             return self._fallback(raw_text, reason="too_long", latency_ms=latency_ms)
 
         cost_usd = self._estimate_cost(tokens_in, tokens_out, self._config.model)
@@ -344,10 +360,10 @@ class PostProcess:
         return any(marker in low for marker in REFUSAL_MARKERS)
 
     @staticmethod
-    def _too_long(raw: str, reply: str) -> bool:
+    def _too_long(raw: str, reply: str, max_ratio: float = MAX_LENGTH_RATIO) -> bool:
         if len(raw) == 0:
             return False
-        return len(reply) / max(len(raw), 1) > MAX_LENGTH_RATIO
+        return len(reply) / max(len(raw), 1) > max_ratio
 
     @staticmethod
     def _estimate_cost(tokens_in: int, tokens_out: int, model_id: str) -> float:

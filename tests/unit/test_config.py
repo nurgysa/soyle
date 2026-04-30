@@ -115,6 +115,33 @@ def test_postprocess_timeout_positive() -> None:
         PostProcessConfig(timeout_seconds=0)
 
 
+def test_postprocess_default_prompt_files() -> None:
+    """Every supported mode must map to a default prompt-file name.
+
+    Drift-guard: if a new mode is added without its prompt_file default,
+    `app.py`'s `prompt_path(self._cfg.postprocess.<mode>_file)` lookup
+    would crash at PostProcess construction.
+    """
+    cfg = PostProcessConfig()
+    assert cfg.mode == "polish"
+    assert cfg.prompt_file == "polish_v1.md"
+    assert cfg.rewrite_prompt_file == "rewrite_v1.md"
+    assert cfg.ai_prompt_file == "ai_prompt_v1.md"
+    assert cfg.plain_text_file == "plain_text_v1.md"
+    assert cfg.task_prompt_file == "task_v1.md"
+
+
+def test_postprocess_mode_accepts_task() -> None:
+    """`task` is a valid Literal value for the mode field."""
+    cfg = PostProcessConfig(mode="task")
+    assert cfg.mode == "task"
+
+
+def test_postprocess_mode_rejects_unknown() -> None:
+    with pytest.raises(ValueError):
+        PostProcessConfig(mode="summarize")
+
+
 def test_configstore_loads_valid_toml(tmp_path: Path, config_fixture_dir: Path) -> None:
     target = tmp_path / "config.toml"
     target.write_bytes((config_fixture_dir / "valid.toml").read_bytes())

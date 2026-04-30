@@ -14,7 +14,7 @@ class TrayIcon(QObject):
     settings_requested = Signal()
     logs_requested = Signal()
     quit_requested = Signal()
-    mode_changed = Signal(str)  # one of "polish", "rewrite", "ai_prompt", "plain_text"
+    mode_changed = Signal(str)  # one of "polish", "rewrite", "ai_prompt", "plain_text", "task"
 
     # Mode id → human label shown in the tray submenu and tooltip. Order is
     # the menu order. Keep in sync with PostProcessConfig.mode Literal.
@@ -23,6 +23,7 @@ class TrayIcon(QObject):
         ("rewrite", "Rewrite"),
         ("ai_prompt", "AI Prompt"),
         ("plain_text", "Plain Text"),
+        ("task", "Task"),
     )
 
     def __init__(self) -> None:
