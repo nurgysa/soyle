@@ -111,3 +111,52 @@ def test_save_dedupes_order_preserved(store: DictionaryStore) -> None:
     store.save(["A", "B", "A", "C", "b"])
     # 'A' kept on first appearance; 'b' filtered as case-dup of 'B'
     assert store.load() == ["A", "B", "C"]
+
+
+def test_merge_with_pure_union_dedupes(tmp_path: Path) -> None:
+    """[A, B] + [B, C] = [A, B, C], no duplicates."""
+    store = DictionaryStore(path=tmp_path / "dict.toml")
+    store.save(["A", "B"])
+    merged = store.merge_with(["B", "C"])
+    assert merged == ["A", "B", "C"]
+
+
+def test_merge_with_preserves_local_first_appearance_order(tmp_path: Path) -> None:
+    """Local order is preserved; new remote terms appended at the end."""
+    store = DictionaryStore(path=tmp_path / "dict.toml")
+    store.save(["Zebra", "Apple", "Mango"])
+    merged = store.merge_with(["Banana", "Apple"])
+    assert merged == ["Zebra", "Apple", "Mango", "Banana"]
+
+
+def test_merge_with_empty_local_returns_remote(tmp_path: Path) -> None:
+    store = DictionaryStore(path=tmp_path / "dict.toml")
+    merged = store.merge_with(["X", "Y"])
+    assert merged == ["X", "Y"]
+
+
+def test_merge_with_empty_remote_returns_local(tmp_path: Path) -> None:
+    store = DictionaryStore(path=tmp_path / "dict.toml")
+    store.save(["A", "B"])
+    merged = store.merge_with([])
+    assert merged == ["A", "B"]
+
+
+def test_merge_with_diacritic_insensitive_dedup(tmp_path: Path) -> None:
+    """Söyle and Soyle and SÖYLE collapse to one — first-typed wins.
+    Mirrors the existing _normalize_key logic used in DictionaryStore.save()."""
+    store = DictionaryStore(path=tmp_path / "dict.toml")
+    store.save(["Söyle"])
+    merged = store.merge_with(["Soyle", "SÖYLE", "Astana"])
+    assert merged == ["Söyle", "Astana"]
+
+
+def test_merge_with_does_not_persist_to_disk(tmp_path: Path) -> None:
+    """merge_with is pure: it returns the merged list but doesn't save."""
+    path = tmp_path / "dict.toml"
+    store = DictionaryStore(path=path)
+    store.save(["A"])
+    store.merge_with(["B", "C"])
+    # Disk still has only "A"
+    reloaded = DictionaryStore(path=path).load()
+    assert reloaded == ["A"]
