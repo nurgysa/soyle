@@ -10,7 +10,7 @@ from typing import Literal
 import keyring
 import tomli_w
 from platformdirs import user_config_path
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, ValidationError
 
 
 class HotkeyConfig(BaseModel):
@@ -109,6 +109,24 @@ class BehaviorConfig(BaseModel):
     monthly_cost_limit_usd: float = Field(default=0.0, ge=0.0)
 
 
+class CloudSyncConfig(BaseModel):
+    """Per-device cloud sync state.
+
+    Currently single-field: timestamp of the last successful sync. Used by
+    CloudSync.should_run_scheduled() to determine whether the 24h interval
+    has elapsed. Stored on disk so it survives Söyle restarts.
+
+    Per-device by design — two devices syncing the same Drive folder run
+    their 24h schedule independently, so each tracks its own clock locally.
+    Schema enforces timezone-aware datetimes (`AwareDatetime`) so naive
+    datetimes are rejected at validation time, not silently accepted to
+    explode later in `now() - last_synced_at` arithmetic.
+    """
+    model_config = ConfigDict(extra="forbid")
+
+    last_synced_at: AwareDatetime | None = None
+
+
 class Config(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -119,6 +137,7 @@ class Config(BaseModel):
     postprocess: PostProcessConfig = Field(default_factory=PostProcessConfig)
     ui: UIConfig = Field(default_factory=UIConfig)
     behavior: BehaviorConfig = Field(default_factory=BehaviorConfig)
+    cloud_sync: CloudSyncConfig = Field(default_factory=CloudSyncConfig)
 
 
 # Two names because of the umlaut: APP_NAME is the user-facing brand,

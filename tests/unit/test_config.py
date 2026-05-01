@@ -1,6 +1,7 @@
 """Tests for Config pydantic models."""
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -8,6 +9,7 @@ import pytest
 from soyle.core.config import (
     AudioConfig,
     BehaviorConfig,
+    CloudSyncConfig,
     Config,
     ConfigStore,
     HotkeyConfig,
@@ -261,3 +263,41 @@ def test_clear_api_key(mocker) -> None:
 
     store.clear_api_key()
     mock_keyring.delete_password.assert_called_once_with("Söyle", "openrouter")
+
+
+def test_cloud_sync_config_defaults() -> None:
+    cfg = CloudSyncConfig()
+    assert cfg.last_synced_at is None
+
+
+def test_config_has_cloud_sync_section() -> None:
+    cfg = Config()
+    assert cfg.cloud_sync is not None
+    assert cfg.cloud_sync.last_synced_at is None
+
+
+def test_cloud_sync_last_synced_at_roundtrips_via_toml(tmp_path: Path) -> None:
+    """Datetime survives TOML save/load round-trip."""
+    path = tmp_path / "config.toml"
+    store = ConfigStore(config_path=path)
+    cfg = store.load()
+    when = datetime(2026, 4, 30, 12, 0, 0, tzinfo=UTC)
+    cfg.cloud_sync.last_synced_at = when
+    store.save(cfg)
+
+    reloaded = ConfigStore(config_path=path).load()
+    assert reloaded.cloud_sync.last_synced_at == when
+    assert reloaded.cloud_sync.last_synced_at.tzinfo is not None  # NEW
+
+
+def test_cloud_sync_config_rejects_unknown_field() -> None:
+    """extra='forbid' contract per other config sections."""
+    with pytest.raises(ValueError):
+        CloudSyncConfig(unknown_field=42)
+
+
+def test_cloud_sync_config_rejects_naive_datetime() -> None:
+    """Naive datetimes (no tzinfo) must fail validation, not silently propagate."""
+    naive = datetime(2026, 4, 30, 12, 0, 0)  # no tzinfo
+    with pytest.raises(ValueError):
+        CloudSyncConfig(last_synced_at=naive)
