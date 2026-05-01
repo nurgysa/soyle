@@ -69,6 +69,19 @@ class DictionaryStore:
         with self._path.open("wb") as f:
             tomli_w.dump({"version": 1, "terms": cleaned}, f)
 
+    def merge_with(self, other_terms: list[str]) -> list[str]:
+        """Pure-union merge: returns local + other deduplicated, NO disk write.
+
+        Used by CloudSync to combine local and remote dictionary state.
+        Order: local terms keep their original positions; other_terms
+        contribute only those not already present (by diacritic-insensitive,
+        case-insensitive key — same rule as save()).
+
+        Pure function — does not call save(). Caller must persist if needed.
+        """
+        local = self.load()
+        return _dedupe_preserving_order(list(local) + list(other_terms))
+
     # ---- Mutations ----
 
     def add(self, term: str) -> list[str]:
