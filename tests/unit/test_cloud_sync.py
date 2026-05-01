@@ -3,10 +3,15 @@ from __future__ import annotations
 
 import base64
 import hashlib
+from urllib.parse import urlencode
+from urllib.request import urlopen
+
+import pytest
 
 from soyle.core.cloud_sync import (
     _derive_code_challenge,
     _generate_code_verifier,
+    _OAuthCallbackListener,
 )
 
 
@@ -40,3 +45,55 @@ def test_derive_code_challenge_has_no_padding() -> None:
     verifier = _generate_code_verifier()
     challenge = _derive_code_challenge(verifier)
     assert "=" not in challenge
+
+
+def test_callback_listener_picks_free_port_above_1024() -> None:
+    listener = _OAuthCallbackListener()
+    listener.start()
+    try:
+        assert listener.port > 1024
+        assert listener.redirect_uri == f"http://localhost:{listener.port}/callback"
+    finally:
+        listener.shutdown()
+
+
+def test_callback_listener_captures_query_params() -> None:
+    listener = _OAuthCallbackListener()
+    listener.start()
+    try:
+        # Simulate browser hitting the redirect_uri
+        params = {"code": "auth-code-123", "state": "xyz"}
+        url = f"{listener.redirect_uri}?{urlencode(params)}"
+        with urlopen(url, timeout=2) as resp:
+            assert resp.status == 200
+
+        result = listener.wait_for_callback(timeout=2)
+        assert result == {"code": "auth-code-123", "state": "xyz"}
+    finally:
+        listener.shutdown()
+
+
+def test_callback_listener_times_out_when_no_callback() -> None:
+    """If user never authorizes, wait_for_callback raises TimeoutError."""
+    listener = _OAuthCallbackListener()
+    listener.start()
+    try:
+        with pytest.raises(TimeoutError):
+            listener.wait_for_callback(timeout=0.5)
+    finally:
+        listener.shutdown()
+
+
+def test_callback_listener_returns_user_friendly_html() -> None:
+    """Page shown in browser after callback — short Russian confirmation."""
+    listener = _OAuthCallbackListener()
+    listener.start()
+    try:
+        url = f"{listener.redirect_uri}?code=x"
+        with urlopen(url, timeout=2) as resp:
+            body = resp.read().decode("utf-8")
+        assert "Söyle" in body
+        # User can now close the browser tab
+        assert "можно закрыть" in body.lower() or "can close" in body.lower()
+    finally:
+        listener.shutdown()
