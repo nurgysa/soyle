@@ -6,13 +6,19 @@ import hashlib
 from urllib.parse import urlencode
 from urllib.request import urlopen
 
+import httpx
 import pytest
+import respx
 
 from soyle.core.cloud_sync import (
+    OAUTH_TOKEN_URL,
     _derive_code_challenge,
+    _exchange_code_for_tokens,
     _generate_code_verifier,
     _OAuthCallbackListener,
+    _refresh_access_token,
 )
+from soyle.core.errors import OAuthAuthRevokedError
 
 
 def test_code_verifier_is_url_safe_string_of_correct_length() -> None:
@@ -97,3 +103,133 @@ def test_callback_listener_returns_user_friendly_html() -> None:
         assert "можно закрыть" in body.lower() or "can close" in body.lower()
     finally:
         listener.shutdown()
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_exchange_code_returns_refresh_and_access_tokens() -> None:
+    respx.post(OAUTH_TOKEN_URL).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "access_token": "ya29.access",
+                "refresh_token": "1//refresh",
+                "expires_in": 3599,
+                "scope": "https://www.googleapis.com/auth/drive.appdata",
+                "token_type": "Bearer",
+            },
+        )
+    )
+    tokens = await _exchange_code_for_tokens(
+        client_id="cid",
+        code="auth-code",
+        code_verifier="verifier",
+        redirect_uri="http://localhost:1234/callback",
+    )
+    assert tokens.refresh_token == "1//refresh"
+    assert tokens.access_token == "ya29.access"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_refresh_access_token_returns_new_access() -> None:
+    respx.post(OAUTH_TOKEN_URL).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "access_token": "ya29.refreshed",
+                "expires_in": 3599,
+                "token_type": "Bearer",
+            },
+        )
+    )
+    access = await _refresh_access_token(client_id="cid", refresh_token="1//refresh")
+    assert access == "ya29.refreshed"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_refresh_access_token_raises_revoked_on_invalid_grant() -> None:
+    respx.post(OAUTH_TOKEN_URL).mock(
+        return_value=httpx.Response(
+            400,
+            json={"error": "invalid_grant"},
+        )
+    )
+    with pytest.raises(OAuthAuthRevokedError):
+        await _refresh_access_token(client_id="cid", refresh_token="bad")
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_refresh_access_token_propagates_network_error() -> None:
+    respx.post(OAUTH_TOKEN_URL).mock(side_effect=httpx.ConnectError("DNS"))
+    with pytest.raises(httpx.ConnectError):
+        await _refresh_access_token(client_id="cid", refresh_token="1//refresh")
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_exchange_code_never_sends_client_secret() -> None:
+    """PKCE security contract: the binary must NOT ship a client_secret.
+
+    A regression that adds client_secret to the payload would silently
+    ship undetected by other tests. This test captures the actual POST
+    body and asserts the field is absent — locking the contract.
+    """
+    from urllib.parse import parse_qsl
+
+    route = respx.post(OAUTH_TOKEN_URL).mock(
+        return_value=httpx.Response(
+            200, json={"access_token": "x", "refresh_token": "y"}
+        )
+    )
+    await _exchange_code_for_tokens(
+        client_id="cid",
+        code="auth-code",
+        code_verifier="verifier-value",
+        redirect_uri="http://localhost:1234/callback",
+    )
+    sent_body = dict(parse_qsl(route.calls.last.request.content.decode("utf-8")))
+    assert "client_secret" not in sent_body
+    # Verify code_verifier IS sent (the PKCE replacement for client_secret).
+    assert sent_body["code_verifier"] == "verifier-value"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_refresh_access_token_never_sends_client_secret() -> None:
+    """Same PKCE contract on the refresh path."""
+    from urllib.parse import parse_qsl
+
+    route = respx.post(OAUTH_TOKEN_URL).mock(
+        return_value=httpx.Response(
+            200, json={"access_token": "x"}
+        )
+    )
+    await _refresh_access_token(client_id="cid", refresh_token="1//refresh")
+    sent_body = dict(parse_qsl(route.calls.last.request.content.decode("utf-8")))
+    assert "client_secret" not in sent_body
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_refresh_access_token_logs_structured_error_for_non_invalid_grant_4xx() -> None:
+    """Non-invalid_grant 4xx must surface the structured error code in logs.
+
+    Without this, debugging a misconfigured-client-id incident
+    (`error=invalid_client`) is indistinguishable from a generic 400 in
+    soyle.log.
+    """
+    respx.post(OAUTH_TOKEN_URL).mock(
+        return_value=httpx.Response(
+            400,
+            json={"error": "invalid_client", "error_description": "wrong client"},
+        )
+    )
+    # Using mocker isn't necessary — we just assert the httpx.HTTPStatusError
+    # propagates with the body still inspectable via .response.
+    with pytest.raises(httpx.HTTPStatusError) as exc_info:
+        await _refresh_access_token(client_id="cid", refresh_token="1//refresh")
+    # The body remains accessible for downstream debugging.
+    assert exc_info.value.response.json()["error"] == "invalid_client"

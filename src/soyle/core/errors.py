@@ -32,3 +32,13 @@ class PostProcessError(SoyleError):
 
 class ConfigError(SoyleError):
     """Config file missing, unreadable, or invalid."""
+
+
+class OAuthAuthRevokedError(SoyleError):
+    """Google OAuth refresh token has been revoked.
+
+    Distinct from network/transient errors — caller must clear local
+    keyring state and prompt the user to re-authorize. Distinguished
+    from generic OAuth failures (misconfigured client_id, scope drift)
+    which surface as httpx.HTTPStatusError.
+    """

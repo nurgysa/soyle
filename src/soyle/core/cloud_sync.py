@@ -17,9 +17,15 @@ import hashlib
 import secrets
 import socketserver
 import threading
+from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler
 from queue import Empty, Queue
 from urllib.parse import parse_qs, urlparse
+
+import httpx
+import structlog
+
+from soyle.core.errors import OAuthAuthRevokedError
 
 # ---- PKCE helpers (RFC 7636) ------------------------------------------------
 
@@ -139,3 +145,78 @@ class _OAuthCallbackListener:
         if self._thread is not None:
             self._thread.join(timeout=2)
             self._thread = None
+
+
+# ---- OAuth token endpoint ---------------------------------------------------
+
+OAUTH_TOKEN_URL = "https://oauth2.googleapis.com/token"
+OAUTH_REVOKE_URL = "https://oauth2.googleapis.com/revoke"
+
+_log = structlog.get_logger(__name__)
+
+
+@dataclass(frozen=True)
+class _TokenPair:
+    access_token: str
+    refresh_token: str
+
+
+async def _exchange_code_for_tokens(
+    *,
+    client_id: str,
+    code: str,
+    code_verifier: str,
+    redirect_uri: str,
+) -> _TokenPair:
+    """Exchange OAuth auth code for refresh + access tokens. PKCE flow.
+
+    No client_secret is sent — PKCE replaces it with the code_verifier.
+    """
+    payload = {
+        "client_id": client_id,
+        "code": code,
+        "code_verifier": code_verifier,
+        "grant_type": "authorization_code",
+        "redirect_uri": redirect_uri,
+    }
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        resp = await client.post(OAUTH_TOKEN_URL, data=payload)
+    resp.raise_for_status()
+    body = resp.json()
+    return _TokenPair(
+        access_token=body["access_token"],
+        refresh_token=body["refresh_token"],
+    )
+
+
+async def _refresh_access_token(*, client_id: str, refresh_token: str) -> str:
+    """Trade a refresh_token for a fresh access_token.
+
+    Raises OAuthAuthRevokedError if Google reports the refresh token is
+    no longer valid (user revoked from Google account settings, etc.).
+    Other failures (network, 5xx, non-invalid_grant 4xx) propagate as
+    httpx exceptions for the caller to handle silently. Non-invalid_grant
+    4xx responses are logged with their structured error code so
+    misconfigured-client-id incidents (e.g. invalid_client) are
+    distinguishable from token-revocation in logs.
+    """
+    payload = {
+        "client_id": client_id,
+        "refresh_token": refresh_token,
+        "grant_type": "refresh_token",
+    }
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        resp = await client.post(OAUTH_TOKEN_URL, data=payload)
+    if resp.status_code == 400:
+        body = resp.json() if resp.content else {}
+        error_code = body.get("error")
+        if error_code == "invalid_grant":
+            raise OAuthAuthRevokedError(body.get("error_description", "revoked"))
+        # Non-revocation 4xx: log structured error before letting httpx raise.
+        _log.warning(
+            "oauth_token_endpoint_4xx",
+            error_code=error_code,
+            error_description=body.get("error_description"),
+        )
+    resp.raise_for_status()
+    return resp.json()["access_token"]
