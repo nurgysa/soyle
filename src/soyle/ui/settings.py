@@ -487,7 +487,7 @@ class SettingsWindow(QMainWindow):
         self._cfg.whisper.language = self._w_language.currentData()
 
         self._cfg.postprocess.enabled = self._pp_enabled.isChecked()
-        self._cfg.postprocess.mode = self._pp_mode.currentData()  # type: ignore[assignment]
+        self._cfg.postprocess.mode = self._pp_mode.currentData()
         self._cfg.postprocess.model = self._resolve_combo_model_id(self._pp_model)
         self._cfg.postprocess.timeout_seconds = self._pp_timeout.value()
 
@@ -504,7 +504,7 @@ class SettingsWindow(QMainWindow):
         self._cfg.ui.theme = self._ui_theme.currentText()  # type: ignore[assignment]
         self._cfg.ui.sound_enabled = self._ui_sound.isChecked()
         self._cfg.behavior.autostart = self._beh_autostart.isChecked()
-        self._cfg.behavior.inject_method = self._beh_inject.currentData()  # type: ignore[assignment]
+        self._cfg.behavior.inject_method = self._beh_inject.currentData()
         self._cfg.behavior.monthly_cost_limit_usd = float(self._beh_cost_limit.value())
 
         self._store.save(self._cfg)
