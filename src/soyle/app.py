@@ -6,10 +6,14 @@ import contextlib
 import subprocess
 import sys
 import traceback
+from collections.abc import Callable
 from datetime import UTC, datetime
+from pathlib import Path
 from types import TracebackType
+from typing import Any
 
 import keyboard
+import numpy as np
 import structlog
 from PySide6.QtCore import QObject, QRunnable, QThreadPool, QTimer, Signal
 from PySide6.QtWidgets import QApplication, QMessageBox
@@ -41,8 +45,17 @@ log = structlog.get_logger()
 class _InferenceJob(QRunnable):
     """Runs transcription + polish on a worker thread."""
 
-    def __init__(self, transcriber: Transcriber, postprocess: PostProcess,
-                 audio, sample_rate: int, on_done, on_error) -> None:
+    def __init__(
+        self,
+        transcriber: Transcriber,
+        postprocess: PostProcess,
+        audio: np.ndarray,
+        sample_rate: int,
+        # on_done callback receives (final_text, fallback_used, language,
+        # reason_or_polish_outcome, cost_usd). See `run()` for the call sites.
+        on_done: Callable[[str, bool, str, str, float], None],
+        on_error: Callable[[Exception], None],
+    ) -> None:
         super().__init__()
         self._transcriber = transcriber
         self._postprocess = postprocess
@@ -95,7 +108,9 @@ class SoyleApp(QObject):
         # is invalid. Reset by _reload_config.
         self._auth_warned = False
         # Handle to the global Esc hook (registered in start()).
-        self._esc_hook = None
+        # Typed Any | None because keyboard.on_press_key returns an opaque
+        # hook handle; we only use it to call keyboard.unhook().
+        self._esc_hook: Any | None = None
 
         self._indicator = Indicator()
         self._tray = TrayIcon()
@@ -210,7 +225,7 @@ class SoyleApp(QObject):
 
     # ---- Hotkey handlers ----
 
-    def _on_hotkey_pressed(self, _: dict) -> None:
+    def _on_hotkey_pressed(self, _: dict[str, Any]) -> None:
         if not self._state.can_start_recording():
             return
         try:
@@ -226,7 +241,7 @@ class SoyleApp(QObject):
             self._tray.toast("Söyle", f"Микрофон: {exc}")
             self._state.reset_to_idle()
 
-    def _on_hotkey_released(self, _: dict) -> None:
+    def _on_hotkey_released(self, _: dict[str, Any]) -> None:
         if self._state.current != State.RECORDING:
             return
         try:
@@ -271,7 +286,7 @@ class SoyleApp(QObject):
         )
         QThreadPool.globalInstance().start(job)
 
-    def _on_cancel_requested(self, _: dict) -> None:
+    def _on_cancel_requested(self, _: dict[str, Any]) -> None:
         # Only react while recording; Esc during idle/transcribing is a no-op
         # so Esc keeps its normal behavior in the foreground app.
         if self._state.current != State.RECORDING:
@@ -511,11 +526,11 @@ def _configure_logging() -> None:
 
 
 def _write_crash_report(
-    log_dir,
+    log_dir: Path,
     exc_type: type[BaseException],
     exc_value: BaseException,
     tb: TracebackType | None,
-):
+) -> Path:
     """Write a timestamped crash report. Returns the path on success.
 
     Kept as a module-level helper so tests can exercise the file-write

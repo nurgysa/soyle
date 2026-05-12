@@ -62,10 +62,13 @@ class UsageTracker:
         return datetime.now(tz=UTC).strftime("%Y-%m-%d")
 
     def _trim_old(self) -> None:
+        # Walrus binds _parse_day's result once per iteration so mypy can
+        # narrow the type to `date` after the None check — and we avoid
+        # the wasteful second strptime() call the previous code did.
         cutoff = (datetime.now(tz=UTC).date() - timedelta(days=_RETENTION_DAYS))
         stale = [
             day for day in self._data
-            if self._parse_day(day) is not None and self._parse_day(day) < cutoff
+            if (parsed := self._parse_day(day)) is not None and parsed < cutoff
         ]
         for day in stale:
             del self._data[day]

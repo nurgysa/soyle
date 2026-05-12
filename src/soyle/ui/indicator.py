@@ -5,7 +5,7 @@ from collections import deque
 from typing import Literal
 
 from PySide6.QtCore import QPoint, QRect, Qt, QTimer
-from PySide6.QtGui import QColor, QCursor, QPainter, QPen
+from PySide6.QtGui import QColor, QCursor, QPainter, QPaintEvent, QPen
 from PySide6.QtWidgets import QWidget
 
 Stage = Literal["recording", "transcribing", "polishing", "hidden", "error"]
@@ -87,7 +87,7 @@ class Indicator(QWidget):
         pos = QCursor.pos() + QPoint(16, 16)
         self.move(pos)
 
-    def paintEvent(self, _) -> None:  # noqa: N802
+    def paintEvent(self, _ev: QPaintEvent | None) -> None:  # noqa: N802
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
 

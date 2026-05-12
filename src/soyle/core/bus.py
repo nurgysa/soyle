@@ -51,7 +51,12 @@ class EventBus(QObject):
         if handler in handlers:
             handlers.remove(handler)
 
-    def emit(self, event: Event, payload: dict[str, Any]) -> None:
+    def emit(self, event: Event, payload: dict[str, Any]) -> None:  # type: ignore[override]
+        # We intentionally redefine QObject.emit here: the parent's signature
+        # is bytes-based for QObject internals, while our event bus
+        # vocabulary is (Event enum, payload dict). Keeping the name is
+        # ergonomic (`bus.emit(...)` reads naturally for pub/sub) — the
+        # mismatch is by design, not a slip-up.
         self._signal.emit(str(event), payload)
 
     def _dispatch(self, event_str: str, payload: dict[str, Any]) -> None:

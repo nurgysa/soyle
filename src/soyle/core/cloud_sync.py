@@ -219,4 +219,7 @@ async def _refresh_access_token(*, client_id: str, refresh_token: str) -> str:
             error_description=body.get("error_description"),
         )
     resp.raise_for_status()
-    return resp.json()["access_token"]
+    # resp.json() returns Any (httpx's typing); narrow explicitly so the
+    # caller doesn't propagate Any through subsequent f-strings or logs.
+    access_token: str = resp.json()["access_token"]
+    return access_token
