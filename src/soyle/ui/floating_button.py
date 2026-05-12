@@ -15,7 +15,7 @@ from __future__ import annotations
 import math
 
 from PySide6.QtCore import QPoint, Qt
-from PySide6.QtGui import QColor, QGuiApplication, QMouseEvent, QPainter, QPen
+from PySide6.QtGui import QColor, QGuiApplication, QMouseEvent, QPainter, QPaintEvent, QPen
 from PySide6.QtWidgets import QWidget
 
 from soyle.core.bus import Event, EventBus
@@ -97,7 +97,7 @@ class FloatingButton(QWidget):
 
     # ---- Painting -----------------------------------------------------------
 
-    def paintEvent(self, _ev) -> None:  # noqa: N802 (Qt API)
+    def paintEvent(self, _ev: QPaintEvent) -> None:  # noqa: N802 (Qt API)
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
 
