@@ -1,0 +1,38 @@
+# Dependabot keeps Python packages (declared in pyproject.toml) and the
+# GitHub Actions pinned in .github/workflows/*.yml up to date.
+#
+# Cadence: weekly. Non-breaking bumps (minor + patch) are grouped into a
+# single PR per ecosystem to reduce review noise; major bumps land as
+# individual PRs so they get a proper review against any breaking-change
+# notes.
+#
+# Commit-message prefixes follow this repo's conventional-commits style:
+# `build(deps)` for pip, `ci(deps)` for github-actions — same convention
+# used by f76cda0 and similar manual dependency commits.
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "build(deps)"
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "ci(deps)"
