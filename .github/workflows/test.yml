@@ -9,7 +9,7 @@ jobs:
   lint-and-unit:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install uv
         run: irm https://astral.sh/uv/install.ps1 | iex
