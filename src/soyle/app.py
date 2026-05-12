@@ -30,6 +30,7 @@ from soyle.platform.autostart import (
     enable_autostart,
 )
 from soyle.platform.single_instance import SingleInstance
+from soyle.ui.floating_button import FloatingButton
 from soyle.ui.indicator import Indicator
 from soyle.ui.resources import prompt_path, qss_path
 from soyle.ui.settings import SettingsWindow
@@ -99,6 +100,10 @@ class SoyleApp(QObject):
 
         self._indicator = Indicator()
         self._tray = TrayIcon()
+        # Mouse-triggered PTT alternative; emits HOTKEY_PRESSED/RELEASED via
+        # the same EventBus, so state-machine guards in _on_hotkey_pressed
+        # de-dup with HotkeyBox. Hidden if user disabled in Settings.
+        self._floating_button = FloatingButton(bus=self._bus)
         self._settings_window: SettingsWindow | None = None
 
         self._recorder = Recorder(bus=self._bus)
@@ -140,6 +145,8 @@ class SoyleApp(QObject):
 
     def start(self) -> None:
         self._tray.show()
+        if self._cfg.ui.show_floating_button:
+            self._floating_button.show()
         try:
             self._hotkey.start()
         except Exception as exc:
@@ -180,6 +187,7 @@ class SoyleApp(QObject):
                 keyboard.unhook(self._esc_hook)
             self._esc_hook = None
         self._indicator.hide_indicator()
+        self._floating_button.close()
         self._tray.hide()
         self._qapp.quit()
 
@@ -189,6 +197,23 @@ class SoyleApp(QObject):
         self._bus.subscribe(Event.HOTKEY_PRESSED, self._on_hotkey_pressed)
         self._bus.subscribe(Event.HOTKEY_RELEASED, self._on_hotkey_released)
         self._bus.subscribe(Event.CANCEL_REQUESTED, self._on_cancel_requested)
+        # Floating-button visual state mirrors the state machine.
+        self._bus.subscribe(
+            Event.RECORDING_STARTED,
+            lambda _payload: self._floating_button.set_recording(True),
+        )
+        self._bus.subscribe(
+            Event.RECORDING_STOPPED,
+            lambda _payload: self._floating_button.set_recording(False),
+        )
+        self._bus.subscribe(
+            Event.INJECTING,
+            lambda _payload: self._floating_button.set_processing(True),
+        )
+        self._bus.subscribe(
+            Event.INJECTED,
+            lambda _payload: self._floating_button.set_processing(False),
+        )
 
     def _wire_tray(self) -> None:
         self._tray.settings_requested.connect(self._show_settings)
@@ -443,6 +468,12 @@ class SoyleApp(QObject):
         )
         self._injector.set_method(self._cfg.behavior.inject_method)
         self._tray.set_mode(self._cfg.postprocess.mode)
+        # Floating button visibility tracks the live config without restart.
+        if self._cfg.ui.show_floating_button:
+            if not self._floating_button.isVisible():
+                self._floating_button.show()
+        else:
+            self._floating_button.hide()
         # User just saved — give the auth warning another chance if the key
         # was edited.
         self._auth_warned = False

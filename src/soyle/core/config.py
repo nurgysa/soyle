@@ -94,6 +94,10 @@ class UIConfig(BaseModel):
     indicator_follow_mouse: bool = True
     theme: Literal["dark", "light", "system"] = "dark"
     sound_enabled: bool = True
+    # Phase A: always-visible floating mic pill in bottom-right corner.
+    # Mouse press-and-hold = PTT alternative to Right Alt. Phase B will
+    # repurpose this widget to anchor near focused text fields (Wispr-style).
+    show_floating_button: bool = True
 
 
 class BehaviorConfig(BaseModel):

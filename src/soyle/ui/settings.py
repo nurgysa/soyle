@@ -361,6 +361,15 @@ class SettingsWindow(QMainWindow):
         self._ui_sound = QCheckBox("Звуковые сигналы")
         self._ui_sound.setChecked(self._cfg.ui.sound_enabled)
         layout.addRow(self._ui_sound)
+        self._ui_floating = QCheckBox(
+            "Показать floating-кнопку для диктовки мышью"
+        )
+        self._ui_floating.setChecked(self._cfg.ui.show_floating_button)
+        self._ui_floating.setToolTip(
+            "Круглая иконка микрофона в правом нижнем углу. "
+            "Зажми и говори — альтернатива Right Alt."
+        )
+        layout.addRow(self._ui_floating)
         self._beh_autostart = QCheckBox("Запуск при старте Windows")
         self._beh_autostart.setChecked(self._cfg.behavior.autostart)
         layout.addRow(self._beh_autostart)
@@ -503,6 +512,7 @@ class SettingsWindow(QMainWindow):
 
         self._cfg.ui.theme = self._ui_theme.currentText()  # type: ignore[assignment]
         self._cfg.ui.sound_enabled = self._ui_sound.isChecked()
+        self._cfg.ui.show_floating_button = self._ui_floating.isChecked()
         self._cfg.behavior.autostart = self._beh_autostart.isChecked()
         self._cfg.behavior.inject_method = self._beh_inject.currentData()  # type: ignore[assignment]
         self._cfg.behavior.monthly_cost_limit_usd = float(self._beh_cost_limit.value())

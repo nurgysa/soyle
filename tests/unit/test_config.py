@@ -117,6 +117,24 @@ def test_postprocess_timeout_positive() -> None:
         PostProcessConfig(timeout_seconds=0)
 
 
+def test_ui_show_floating_button_default_true() -> None:
+    """Phase A default — pill is visible on first launch so users discover it."""
+    cfg = Config()
+    assert cfg.ui.show_floating_button is True
+
+
+def test_ui_show_floating_button_roundtrips_via_toml(tmp_path: Path) -> None:
+    """User-disabled state survives save/reload."""
+    target = tmp_path / "config.toml"
+    store = ConfigStore(config_path=target)
+    cfg = store.load()
+    cfg.ui.show_floating_button = False
+    store.save(cfg)
+
+    reloaded = ConfigStore(config_path=target).load()
+    assert reloaded.ui.show_floating_button is False
+
+
 def test_postprocess_default_prompt_files() -> None:
     """Every supported mode must map to a default prompt-file name.
 
