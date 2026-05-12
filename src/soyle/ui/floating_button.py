@@ -15,7 +15,7 @@ from __future__ import annotations
 import math
 
 from PySide6.QtCore import QPoint, Qt
-from PySide6.QtGui import QColor, QGuiApplication, QMouseEvent, QPaintEvent, QPainter, QPen
+from PySide6.QtGui import QColor, QGuiApplication, QMouseEvent, QPainter, QPaintEvent, QPen
 from PySide6.QtWidgets import QWidget
 
 from soyle.core.bus import Event, EventBus
