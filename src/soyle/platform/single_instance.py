@@ -21,7 +21,11 @@ class SingleInstance:
         """Return True if this is the first/only instance, False if another holds the mutex."""
         if sys.platform != "win32":
             return True  # non-Windows: treat as first
-        self._handle = win32event.CreateMutex(None, False, self._name)
+        # types-pywin32 declares the first arg as PySECURITY_ATTRIBUTES,
+        # but the actual Win32 API documents None as "use default security
+        # descriptor" — which is exactly what we want for a single-instance
+        # mutex. The stub is stricter than the platform; ignore the arg-type.
+        self._handle = win32event.CreateMutex(None, False, self._name)  # type: ignore[arg-type]
         last_error = win32api.GetLastError()
         if last_error == winerror.ERROR_ALREADY_EXISTS:
             self.release()

@@ -3417,6 +3417,9 @@ dev = [
     { name = "pytest-xdist" },
     { name = "respx" },
     { name = "ruff" },
+    { name = "types-keyboard" },
+    { name = "types-pyperclip" },
+    { name = "types-pywin32" },
 ]
 gpu = [
     { name = "nvidia-cublas-cu12" },
@@ -3451,6 +3454,9 @@ requires-dist = [
     { name = "sounddevice", specifier = ">=0.5.0" },
     { name = "structlog", specifier = ">=24.4.0" },
     { name = "tomli-w", specifier = ">=1.1.0" },
+    { name = "types-keyboard", marker = "extra == 'dev'", specifier = ">=0.13.0" },
+    { name = "types-pyperclip", marker = "extra == 'dev'", specifier = ">=1.9.0" },
+    { name = "types-pywin32", marker = "extra == 'dev'", specifier = ">=308" },
 ]
 provides-extras = ["dev", "build", "gpu"]
 
@@ -3535,6 +3541,33 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/f5/24/cb09efec5cc954f7f9b930bf8279447d24618bb6758d4f6adf2574c41780/typer-0.24.1.tar.gz", hash = "sha256:e39b4732d65fbdcde189ae76cf7cd48aeae72919dea1fdfc16593be016256b45", size = 118613, upload-time = "2026-02-21T16:54:40.609Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/4a/91/48db081e7a63bb37284f9fbcefda7c44c277b18b0e13fbc36ea2335b71e6/typer-0.24.1-py3-none-any.whl", hash = "sha256:112c1f0ce578bfb4cab9ffdabc68f031416ebcc216536611ba21f04e9aa84c9e", size = 56085, upload-time = "2026-02-21T16:54:41.616Z" },
+]
+
+[[package]]
+name = "types-keyboard"
+version = "0.13.2.20260508"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/2e/1b/349dfe00552b9106ec91a689fb06d0c61795837fa60f1dcc5362069b8ab5/types_keyboard-0.13.2.20260508.tar.gz", hash = "sha256:0a621ef06f4324ed1c23cc90e2500e12d7fc84256d736db9cbf668ba231333b3", size = 11010, upload-time = "2026-05-08T04:47:01.826Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/64/31/508081076a5f0c09e485a4a434d762534313300960b6aaf2d0a43ebbe054/types_keyboard-0.13.2.20260508-py3-none-any.whl", hash = "sha256:cc4a3d29c90a9fc79c3f24047ce422ffbea2d2992d0d932277d4fc0974f34c0a", size = 11849, upload-time = "2026-05-08T04:47:00.79Z" },
+]
+
+[[package]]
+name = "types-pyperclip"
+version = "1.11.0.20260508"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/7a/ab/189f37a135df54686543ab99e8e1e6f8892efedc389beb80a72e038416e9/types_pyperclip-1.11.0.20260508.tar.gz", hash = "sha256:e5dafdc929874f3f6bf495171d06cbc22483954a9ac0699ca53abbf9eadc592d", size = 7323, upload-time = "2026-05-08T04:48:18.355Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d2/61/02207b51ce9f3967d52e72749118d77a730cc29acad1ad623aa9b49a4e2f/types_pyperclip-1.11.0.20260508-py3-none-any.whl", hash = "sha256:4c55f5d7d2224804c54d936881a0e53d8e41b909a64611333662eb04e9bfd1e4", size = 7628, upload-time = "2026-05-08T04:48:17.593Z" },
+]
+
+[[package]]
+name = "types-pywin32"
+version = "311.0.0.20260508"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/19/c7/38afbc42ec39aae3e70fe73c1ee6631feb8c4ac3db0496009c2e67fa5936/types_pywin32-311.0.0.20260508.tar.gz", hash = "sha256:143f6b19a036de630e28a196452f1da829573cd2dd64b7289ff86bb36c93d3d6", size = 332372, upload-time = "2026-05-08T04:50:06.683Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f2/96/8a25f248165acc32e0e4246f72e30e075e6596dd6ff912968e962c421d49/types_pywin32-311.0.0.20260508-py3-none-any.whl", hash = "sha256:933063714b43dc7fbd86f28842ca3367e901f24d32795025e749568e56b84b2b", size = 395354, upload-time = "2026-05-08T04:50:05.375Z" },
 ]
 
 [[package]]

@@ -113,7 +113,10 @@ def qt_event_to_hotkey_string(
 
     # Case 4: curated list of standalone special keys
     if qt_key in _QT_KEY_TO_NAME:
-        return _QT_KEY_TO_NAME[qt_key], None
+        # Membership check above guarantees qt_key matches a Qt.Key entry —
+        # cast satisfies mypy without changing runtime behavior. (Qt.Key is
+        # an IntEnum, so dict lookup works by integer value either way.)
+        return _QT_KEY_TO_NAME[Qt.Key(qt_key)], None
 
     # Case 5: regular letter/digit keys — allowed but unusual (they'd
     # eat normal typing). Let the user set them if they want.

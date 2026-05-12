@@ -131,7 +131,7 @@ class Recorder:
             raise AudioDeviceError(f"could not enumerate audio devices: {exc}") from exc
 
         has_input = any(
-            (d.get("max_input_channels", 0) > 0) for d in devices  # type: ignore[union-attr]
+            (d.get("max_input_channels", 0) > 0) for d in devices
         )
         if not has_input:
             raise AudioDeviceError("no microphone device found")

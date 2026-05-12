@@ -8,7 +8,7 @@ from pathlib import Path
 def _bundle_root() -> Path:
     """Package root; PyInstaller overrides via sys._MEIPASS."""
     if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
-        return Path(sys._MEIPASS)  # type: ignore[attr-defined]
+        return Path(sys._MEIPASS)
     return Path(__file__).resolve().parent.parent
 
 

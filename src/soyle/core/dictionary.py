@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import tomllib
 import unicodedata
+from collections.abc import Iterable
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -143,7 +144,7 @@ class DictionaryStore:
         self._path.rename(backup)
 
 
-def _dedupe_preserving_order(items: object) -> list[str]:
+def _dedupe_preserving_order(items: Iterable[str]) -> list[str]:
     seen: set[str] = set()
     out: list[str] = []
     for item in items:

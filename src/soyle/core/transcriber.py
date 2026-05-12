@@ -12,6 +12,7 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, cast
 
 import numpy as np
 import structlog
@@ -136,7 +137,7 @@ class TranscriptResult:
     raw_text: str
     language: str
     duration_ms: int
-    segments: list[dict]
+    segments: list[dict[str, Any]]
 
 
 class Transcriber:
@@ -273,4 +274,7 @@ def _resample_to_16k(audio: np.ndarray, from_rate: int) -> np.ndarray:
     target_len = int(duration * 16000)
     x = np.linspace(0, 1, len(audio), dtype=np.float64)
     y = np.linspace(0, 1, target_len, dtype=np.float64)
-    return np.interp(y, x, audio).astype(np.float32)
+    # np.interp's return type is typed as Any in numpy's stubs;
+    # .astype(np.float32) narrows the runtime dtype but mypy still
+    # sees an Any. Explicit cast keeps the public signature honest.
+    return cast(np.ndarray, np.interp(y, x, audio).astype(np.float32))
