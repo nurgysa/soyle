@@ -34,6 +34,12 @@ dev = [
   "ruff>=0.8.0",
   "mypy>=1.13.0",
   "pre-commit>=4.0.0",
+  # Third-party type stubs so `mypy strict` doesn't trip on import-untyped.
+  # `faster_whisper` and `sounddevice` have no official stubs — see the
+  # [[tool.mypy.overrides]] block below for those.
+  "types-keyboard>=0.13.0",
+  "types-pyperclip>=1.9.0",
+  "types-pywin32>=308",
 ]
 build = [
   "pyinstaller>=6.11.0",
@@ -84,6 +90,15 @@ python_version = "3.12"
 strict = true
 warn_return_any = true
 warn_unused_ignores = true
+
+# `faster_whisper` and `sounddevice` ship no PEP 561 stubs and have no
+# `types-*` package on PyPI as of 2026-05. Without these overrides,
+# `strict = true` flags every import line as an error. The library
+# behavior is well-documented in their READMEs; missing type info is a
+# small price for not vendoring our own stubs.
+[[tool.mypy.overrides]]
+module = ["faster_whisper.*", "sounddevice.*"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
