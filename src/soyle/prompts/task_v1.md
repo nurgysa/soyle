@@ -141,7 +141,7 @@ Output:
 
 Input: {"language":"kk","text":"шұғыл түрде production-да keep-alive-ды fix қылу керек юзерлердің сессиялары үзіліп жатыр Engineering команда"}
 Output:
-Задача: Fix keep-alive в production
+Задача: Production-да keep-alive-ды fix қылу
 
 Департамент: Engineering
 
@@ -155,7 +155,7 @@ Output:
 
 Департамент: Маркетинг
 
-Приоритет: P1
+Приоритет:
 
 Описание: Жаңа лендинг үшін екі вариант дайындау. Дизайнерлермен талқылау керек жұмаға дейін.
 
