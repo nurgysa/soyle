@@ -1,6 +1,8 @@
 """Settings window with tabs: Hotkey, Audio, Whisper, PostProcess, Dictionary, Cloud Sync, UI, About."""
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from PySide6.QtCore import QThreadPool, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -66,12 +68,17 @@ class SettingsWindow(QMainWindow):
         dictionary_store: DictionaryStore | None = None,
         cloud_sync: CloudSync | None = None,
         tray: TrayIcon | None = None,
+        on_dictionary_changed: Callable[[], None] | None = None,
     ) -> None:
         super().__init__()
         self._store = store
         self._dict_store = dictionary_store or DictionaryStore()
         self._cloud_sync = cloud_sync
         self._tray = tray
+        # Invoked when manual Sync now pulled new terms from Drive — lets
+        # SoyleApp refresh Transcriber + PostProcess in place so dictation
+        # picks up new terms immediately, not after the next config save.
+        self._on_dictionary_changed = on_dictionary_changed
         self._cfg: Config = store.load()
 
         self.setWindowTitle("Söyle — настройки")
@@ -436,11 +443,18 @@ class SettingsWindow(QMainWindow):
         """Main-thread slot — refresh timestamp + toast on OK.
 
         SoyleApp's _handle_sync_outcome already covers AUTH_REVOKED / QUOTA /
-        APP_SUSPENDED toasts at the app level. Here we only need the
-        Settings-tab-local update (timestamp + a confirmation toast for OK).
+        APP_SUSPENDED toasts at the app level. Here we own the
+        Settings-tab-local update (timestamp + confirmation toast on OK)
+        plus the dictionary-consumers refresh that the app-level handler
+        would do for scheduled syncs.
         """
         self._cs_last_synced_label.setText(self._cloud_sync_last_synced_text())
         if result.outcome is SyncOutcome.OK:
+            if result.added_local > 0 and self._on_dictionary_changed is not None:
+                # Codex P1 on PR #19: without this, manual "Sync now" pulls
+                # new terms but Transcriber/PostProcess keep the stale prompt
+                # until next config reload/restart.
+                self._on_dictionary_changed()
             self._toast(
                 "Söyle",
                 f"Sync OK. Локально +{result.added_local}, "
