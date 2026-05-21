@@ -481,6 +481,7 @@ class SoyleApp(QObject):
                 dictionary_store=self._dict_store,
                 cloud_sync=self._cloud_sync,
                 tray=self._tray,
+                on_dictionary_changed=self._refresh_dictionary_consumers,
             )
             self._settings_window.settings_saved.connect(self._reload_config)
         self._settings_window.show()
@@ -614,16 +615,25 @@ class SoyleApp(QObject):
                 level="critical",
             )
         elif result.outcome is SyncOutcome.OK and result.added_local > 0:
-            # New terms pulled from Drive — refresh consumers in place so
-            # in-flight _InferenceJob references stay valid (mirrors the
-            # _reload_config pattern at the bottom of __init__).
-            self._transcriber.set_initial_prompt(self._dict_store.as_whisper_prompt())
-            self._postprocess.set_dictionary_hint(self._dict_store.as_llm_instruction())
+            self._refresh_dictionary_consumers()
             self._tray.toast(
                 "Söyle",
                 f"Sync: добавлено {result.added_local} терминов.",
                 level="info",
             )
+
+    def _refresh_dictionary_consumers(self) -> None:
+        """Push the latest local dictionary into Transcriber + PostProcess.
+
+        Called when sync pulled new terms from Drive (added_local > 0).
+        Refreshes in place — swapping the instances would orphan an
+        in-flight _InferenceJob's references — mirrors _reload_config's
+        approach. Also injected as a callback into SettingsWindow so
+        manual "Sync now" clicks refresh dictation consumers too
+        (codex P1 on PR #19: tab-local _cs_sync_done was bypassing this).
+        """
+        self._transcriber.set_initial_prompt(self._dict_store.as_whisper_prompt())
+        self._postprocess.set_dictionary_hint(self._dict_store.as_llm_instruction())
 
     # ---- Logs ----
 
