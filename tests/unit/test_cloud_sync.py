@@ -428,6 +428,27 @@ async def test_drive_get_raises_corrupted_on_invalid_toml() -> None:
     assert exc_info.value.file_id == file_id
 
 
+@pytest.mark.asyncio
+@respx.mock
+async def test_drive_get_excludes_trashed_files() -> None:
+    """Drive files.list returns trashed items by default — must exclude them.
+
+    Without `trashed=false`, a trashed dictionary.toml (user deleted in Drive
+    UI but still in Trash) can be returned ahead of the live file, leading
+    sync to read/update the wrong file and produce stale or corrupted state.
+    """
+    route = respx.get(f"{DRIVE_API_BASE}/files").mock(
+        return_value=httpx.Response(200, json={"files": []})
+    )
+    await _drive_get_dictionary(access_token="ya29.x")
+    assert route.called
+    q_param = route.calls[0].request.url.params.get("q")
+    assert q_param is not None
+    assert "trashed=false" in q_param
+    # Filename predicate must remain — exclusion is additive, not a replacement.
+    assert f"name='{DRIVE_FILE_NAME}'" in q_param
+
+
 # ---- Drive REST primitives: PUT + rename (Task 9) ---------------------------
 
 
