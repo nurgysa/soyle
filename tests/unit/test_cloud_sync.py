@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import threading
 from datetime import UTC, datetime, timedelta
 from urllib.parse import urlencode
 from urllib.request import urlopen
@@ -787,3 +788,68 @@ async def test_lookup_file_id_excludes_trashed_files(cloud_sync) -> None:
     assert q_param is not None
     assert "trashed=false" in q_param
     assert f"name='{DRIVE_FILE_NAME}'" in q_param
+
+
+# ---- OAuth orchestration: begin_oauth_flow + complete_oauth_flow -----------
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_begin_oauth_flow_returns_auth_url_and_starts_listener(
+    cloud_sync, mocker,
+) -> None:
+    mocker.patch("soyle.core.cloud_sync.webbrowser.open")
+    auth_url = await cloud_sync.begin_oauth_flow()
+    try:
+        assert auth_url.startswith("https://accounts.google.com/o/oauth2/v2/auth?")
+        assert "client_id=test-client-id" in auth_url
+        assert "code_challenge=" in auth_url
+        assert "code_challenge_method=S256" in auth_url
+        assert (
+            "scope=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fdrive.appdata"
+            in auth_url
+        )
+        assert "access_type=offline" in auth_url
+        assert "prompt=consent" in auth_url
+        assert "redirect_uri=http%3A%2F%2Flocalhost%3A" in auth_url
+
+        # listener has been started (port assigned)
+        assert cloud_sync._oauth_listener is not None
+        assert cloud_sync._oauth_listener.port > 1024
+    finally:
+        if cloud_sync._oauth_listener is not None:
+            cloud_sync._oauth_listener.shutdown()
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_complete_oauth_flow_exchanges_code_and_stores_token(
+    cloud_sync, mocker,
+) -> None:
+    mocker.patch("soyle.core.cloud_sync.webbrowser.open")
+    await cloud_sync.begin_oauth_flow()
+
+    respx.post(OAUTH_TOKEN_URL).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "access_token": "ya29.x",
+                "refresh_token": "1//refresh-stored",
+                "token_type": "Bearer",
+                "expires_in": 3599,
+            },
+        )
+    )
+
+    # Simulate Google redirecting to localhost
+    callback_url = (
+        f"{cloud_sync._oauth_listener.redirect_uri}?code=AUTH_CODE_X"
+    )
+    threading.Thread(
+        target=lambda: urlopen(callback_url, timeout=2), daemon=True,
+    ).start()
+
+    await cloud_sync.complete_oauth_flow()
+
+    assert cloud_sync.is_connected is True
+    assert cloud_sync._token_store.load() == "1//refresh-stored"

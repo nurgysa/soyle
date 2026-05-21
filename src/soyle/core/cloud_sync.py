@@ -20,11 +20,12 @@ import secrets
 import socketserver
 import threading
 import tomllib
+import webbrowser
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from http.server import BaseHTTPRequestHandler
 from queue import Empty, Queue
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, urlencode, urlparse
 
 import httpx
 import keyring
@@ -158,8 +159,10 @@ class _OAuthCallbackListener:
 
 # ---- OAuth token endpoint ---------------------------------------------------
 
+OAUTH_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 OAUTH_TOKEN_URL = "https://oauth2.googleapis.com/token"
 OAUTH_REVOKE_URL = "https://oauth2.googleapis.com/revoke"
+DRIVE_APPDATA_SCOPE = "https://www.googleapis.com/auth/drive.appdata"
 
 _log = structlog.get_logger(__name__)
 
@@ -304,6 +307,8 @@ class CloudSync:
         self._config_store = config_store
         self._client_id = client_id
         self._token_store = _TokenStore()
+        self._oauth_listener: _OAuthCallbackListener | None = None
+        self._oauth_verifier: str | None = None
 
     # -- State predicates -----------------------------------------------------
 
@@ -325,6 +330,70 @@ class CloudSync:
         if last is None:
             return True
         return datetime.now(UTC) - last >= SYNC_INTERVAL
+
+    # -- OAuth orchestration --------------------------------------------------
+
+    async def begin_oauth_flow(self) -> str:
+        """Generate PKCE pair, start listener, open browser, return auth URL.
+
+        Two-phase API: this call kicks off the OAuth dance (verifier,
+        listener, browser). The caller then awaits complete_oauth_flow()
+        to block until Google redirects to localhost. The auth URL is
+        returned mainly for testability — production code already opened
+        it in the browser via webbrowser.open.
+        """
+        verifier = _generate_code_verifier()
+        challenge = _derive_code_challenge(verifier)
+        listener = _OAuthCallbackListener()
+        listener.start()
+
+        params = {
+            "client_id": self._client_id,
+            "redirect_uri": listener.redirect_uri,
+            "response_type": "code",
+            "scope": DRIVE_APPDATA_SCOPE,
+            "code_challenge": challenge,
+            "code_challenge_method": "S256",
+            "access_type": "offline",
+            "prompt": "consent",
+        }
+        auth_url = f"{OAUTH_AUTH_URL}?{urlencode(params)}"
+
+        self._oauth_verifier = verifier
+        self._oauth_listener = listener
+
+        webbrowser.open(auth_url)
+        return auth_url
+
+    async def complete_oauth_flow(self, *, timeout: float = 120.0) -> None:
+        """Wait for the localhost callback, exchange the code, store refresh token.
+
+        Raises:
+            RuntimeError: begin_oauth_flow() not called, or user denied
+                consent (Google redirected with ?error=...).
+            TimeoutError: user didn't authorize within the timeout.
+            httpx.HTTPError: token endpoint failure.
+        """
+        if self._oauth_listener is None or self._oauth_verifier is None:
+            raise RuntimeError(
+                "begin_oauth_flow() must be called before complete_oauth_flow()"
+            )
+        try:
+            params = self._oauth_listener.wait_for_callback(timeout=timeout)
+            if "error" in params:
+                raise RuntimeError(f"OAuth denied: {params['error']}")
+            tokens = await _exchange_code_for_tokens(
+                client_id=self._client_id,
+                code=params["code"],
+                code_verifier=self._oauth_verifier,
+                redirect_uri=self._oauth_listener.redirect_uri,
+            )
+            self._token_store.save(tokens.refresh_token)
+            _log.info("cloud_sync_connected")
+        finally:
+            self._oauth_listener.shutdown()
+            self._oauth_listener = None
+            self._oauth_verifier = None
 
     # -- Sync entry point -----------------------------------------------------
 
