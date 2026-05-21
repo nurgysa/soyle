@@ -18,6 +18,7 @@ import secrets
 import socketserver
 import threading
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from http.server import BaseHTTPRequestHandler
 from queue import Empty, Queue
 from urllib.parse import parse_qs, urlparse
@@ -27,6 +28,8 @@ import keyring
 import keyring.errors
 import structlog
 
+from soyle.core.config import ConfigStore
+from soyle.core.dictionary import DictionaryStore
 from soyle.core.errors import OAuthAuthRevokedError
 
 # ---- PKCE helpers (RFC 7636) ------------------------------------------------
@@ -251,3 +254,48 @@ class _TokenStore:
     def clear(self) -> None:
         with contextlib.suppress(keyring.errors.PasswordDeleteError):
             keyring.delete_password(KEYRING_SERVICE, KEYRING_USERNAME)
+
+
+# ---- CloudSync coordinator --------------------------------------------------
+
+SYNC_INTERVAL = timedelta(hours=24)
+
+
+class CloudSync:
+    """Coordinator for Google Drive sync of dictionary.toml.
+
+    Public API per docs/superpowers/specs/2026-04-30-cloud-sync-design.md §5.1.
+    """
+
+    def __init__(
+        self,
+        *,
+        dict_store: DictionaryStore,
+        config_store: ConfigStore,
+        client_id: str,
+    ) -> None:
+        self._dict_store = dict_store
+        self._config_store = config_store
+        self._client_id = client_id
+        self._token_store = _TokenStore()
+
+    # -- State predicates -----------------------------------------------------
+
+    @property
+    def is_connected(self) -> bool:
+        """True if a refresh token is stored in keyring."""
+        return self._token_store.load() is not None
+
+    @property
+    def last_synced_at(self) -> datetime | None:
+        """Timestamp of the last successful sync, or None if never."""
+        return self._config_store.load().cloud_sync.last_synced_at
+
+    def should_run_scheduled(self) -> bool:
+        """True if connected AND >=24h since last sync (or never synced)."""
+        if not self.is_connected:
+            return False
+        last = self.last_synced_at
+        if last is None:
+            return True
+        return datetime.now(UTC) - last >= SYNC_INTERVAL

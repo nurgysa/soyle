@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+from datetime import UTC, datetime, timedelta
 from urllib.parse import urlencode
 from urllib.request import urlopen
 
@@ -14,6 +15,7 @@ from soyle.core.cloud_sync import (
     KEYRING_SERVICE,
     KEYRING_USERNAME,
     OAUTH_TOKEN_URL,
+    CloudSync,
     _derive_code_challenge,
     _exchange_code_for_tokens,
     _generate_code_verifier,
@@ -283,3 +285,83 @@ def test_token_store_clear_swallows_not_found(mocker) -> None:
 
     store = _TokenStore()
     store.clear()  # must not raise
+
+
+# ---- CloudSync skeleton + state predicates (Task 7) -------------------------
+
+
+@pytest.fixture
+def cloud_sync(tmp_path, mocker):
+    """A CloudSync wired to in-memory keyring and a tmp config/dict store."""
+    from soyle.core.config import ConfigStore
+    from soyle.core.dictionary import DictionaryStore
+
+    backing: dict[tuple[str, str], str] = {}
+    mocker.patch(
+        "soyle.core.cloud_sync.keyring.set_password",
+        side_effect=lambda s, u, p: backing.update({(s, u): p}),
+    )
+    mocker.patch(
+        "soyle.core.cloud_sync.keyring.get_password",
+        side_effect=lambda s, u: backing.get((s, u)),
+    )
+    mocker.patch(
+        "soyle.core.cloud_sync.keyring.delete_password",
+        side_effect=lambda s, u: backing.pop((s, u), None),
+    )
+
+    cfg_store = ConfigStore(config_path=tmp_path / "config.toml")
+    dict_store = DictionaryStore(path=tmp_path / "dict.toml")
+    return CloudSync(
+        dict_store=dict_store,
+        config_store=cfg_store,
+        client_id="test-client-id.apps.googleusercontent.com",
+    )
+
+
+def test_is_connected_false_when_no_token(cloud_sync) -> None:
+    assert cloud_sync.is_connected is False
+
+
+def test_is_connected_true_after_token_saved(cloud_sync) -> None:
+    cloud_sync._token_store.save("1//some-refresh")
+    assert cloud_sync.is_connected is True
+
+
+def test_last_synced_at_reads_from_config(cloud_sync) -> None:
+    when = datetime(2026, 4, 30, 10, 0, 0, tzinfo=UTC)
+    cfg = cloud_sync._config_store.load()
+    cfg.cloud_sync.last_synced_at = when
+    cloud_sync._config_store.save(cfg)
+
+    assert cloud_sync.last_synced_at == when
+
+
+def test_should_run_scheduled_false_when_disconnected(cloud_sync) -> None:
+    # No token; even if last_synced_at is ancient, should not run
+    cfg = cloud_sync._config_store.load()
+    cfg.cloud_sync.last_synced_at = datetime(2020, 1, 1, tzinfo=UTC)
+    cloud_sync._config_store.save(cfg)
+    assert cloud_sync.should_run_scheduled() is False
+
+
+def test_should_run_scheduled_false_when_recently_synced(cloud_sync) -> None:
+    cloud_sync._token_store.save("1//refresh")
+    cfg = cloud_sync._config_store.load()
+    cfg.cloud_sync.last_synced_at = datetime.now(UTC) - timedelta(hours=12)
+    cloud_sync._config_store.save(cfg)
+    assert cloud_sync.should_run_scheduled() is False
+
+
+def test_should_run_scheduled_true_after_24h(cloud_sync) -> None:
+    cloud_sync._token_store.save("1//refresh")
+    cfg = cloud_sync._config_store.load()
+    cfg.cloud_sync.last_synced_at = datetime.now(UTC) - timedelta(hours=25)
+    cloud_sync._config_store.save(cfg)
+    assert cloud_sync.should_run_scheduled() is True
+
+
+def test_should_run_scheduled_true_when_never_synced(cloud_sync) -> None:
+    """Connected but last_synced_at=None → first sync should run."""
+    cloud_sync._token_store.save("1//refresh")
+    assert cloud_sync.should_run_scheduled() is True
