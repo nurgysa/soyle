@@ -14,17 +14,25 @@ from __future__ import annotations
 import base64
 import contextlib
 import hashlib
+import json
 import secrets
 import socketserver
 import threading
+import tomllib
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from http.server import BaseHTTPRequestHandler
 from queue import Empty, Queue
 from urllib.parse import parse_qs, urlparse
 
 import httpx
+import keyring
+import keyring.errors
 import structlog
+import tomli_w
 
+from soyle.core.config import ConfigStore
+from soyle.core.dictionary import DictionaryStore
 from soyle.core.errors import OAuthAuthRevokedError
 
 # ---- PKCE helpers (RFC 7636) ------------------------------------------------
@@ -223,3 +231,240 @@ async def _refresh_access_token(*, client_id: str, refresh_token: str) -> str:
     # caller doesn't propagate Any through subsequent f-strings or logs.
     access_token: str = resp.json()["access_token"]
     return access_token
+
+
+# ---- Refresh-token storage (keyring) ----------------------------------------
+
+KEYRING_SERVICE = "Söyle Cloud"
+KEYRING_USERNAME = "google-refresh-token"
+
+
+class _TokenStore:
+    """Thin wrapper around keyring for the OAuth refresh token.
+
+    Encapsulates the (service, username) tuple and the
+    PasswordDeleteError-swallowing pattern used for ConfigStore's
+    clear_api_key. Mirrors the established Söyle keyring convention —
+    one entry per (service, username) pair.
+    """
+
+    def load(self) -> str | None:
+        return keyring.get_password(KEYRING_SERVICE, KEYRING_USERNAME)
+
+    def save(self, refresh_token: str) -> None:
+        keyring.set_password(KEYRING_SERVICE, KEYRING_USERNAME, refresh_token)
+
+    def clear(self) -> None:
+        with contextlib.suppress(keyring.errors.PasswordDeleteError):
+            keyring.delete_password(KEYRING_SERVICE, KEYRING_USERNAME)
+
+
+# ---- CloudSync coordinator --------------------------------------------------
+
+SYNC_INTERVAL = timedelta(hours=24)
+
+
+class CloudSync:
+    """Coordinator for Google Drive sync of dictionary.toml.
+
+    Public API per docs/superpowers/specs/2026-04-30-cloud-sync-design.md §5.1.
+    """
+
+    def __init__(
+        self,
+        *,
+        dict_store: DictionaryStore,
+        config_store: ConfigStore,
+        client_id: str,
+    ) -> None:
+        self._dict_store = dict_store
+        self._config_store = config_store
+        self._client_id = client_id
+        self._token_store = _TokenStore()
+
+    # -- State predicates -----------------------------------------------------
+
+    @property
+    def is_connected(self) -> bool:
+        """True if a refresh token is stored in keyring."""
+        return self._token_store.load() is not None
+
+    @property
+    def last_synced_at(self) -> datetime | None:
+        """Timestamp of the last successful sync, or None if never."""
+        return self._config_store.load().cloud_sync.last_synced_at
+
+    def should_run_scheduled(self) -> bool:
+        """True if connected AND >=24h since last sync (or never synced)."""
+        if not self.is_connected:
+            return False
+        last = self.last_synced_at
+        if last is None:
+            return True
+        return datetime.now(UTC) - last >= SYNC_INTERVAL
+
+
+# ---- Drive REST primitives --------------------------------------------------
+
+DRIVE_API_BASE = "https://www.googleapis.com/drive/v3"
+DRIVE_FILE_NAME = "dictionary.toml"
+
+
+class DriveCorruptedError(Exception):
+    """Raised when the file in Drive App Data has invalid TOML.
+
+    Carries file_id so the caller can rename the broken file out of the
+    way before uploading the local replacement.
+    """
+
+    def __init__(self, file_id: str, original: Exception) -> None:
+        super().__init__(f"Drive content not valid TOML (file_id={file_id})")
+        self.file_id = file_id
+        self.original = original
+
+
+async def _drive_get_dictionary(
+    *, access_token: str
+) -> tuple[list[str], str | None]:
+    """Fetch dictionary.toml from Drive App Data folder.
+
+    Returns:
+        (terms, etag) — terms is empty list if file doesn't exist yet;
+        etag is None in that case, otherwise the strong ETag header value
+        for use in subsequent If-Match write.
+
+    Raises:
+        DriveCorruptedError: file exists but content isn't valid TOML.
+        httpx.HTTPError: network or 5xx; caller silences for transients.
+    """
+    headers = {"Authorization": f"Bearer {access_token}"}
+    async with httpx.AsyncClient(timeout=15.0, headers=headers) as client:
+        # 1. List files in App Data folder filtered by name.
+        list_resp = await client.get(
+            f"{DRIVE_API_BASE}/files",
+            params={
+                "spaces": "appDataFolder",
+                "q": f"name='{DRIVE_FILE_NAME}'",
+                "fields": "files(id,name,modifiedTime)",
+            },
+        )
+        list_resp.raise_for_status()
+        files = list_resp.json().get("files", [])
+        if not files:
+            return [], None
+
+        file_id = files[0]["id"]
+
+        # 2. Download content + capture ETag.
+        get_resp = await client.get(
+            f"{DRIVE_API_BASE}/files/{file_id}",
+            params={"alt": "media"},
+        )
+        get_resp.raise_for_status()
+        etag = get_resp.headers.get("ETag")
+
+    try:
+        parsed = tomllib.loads(get_resp.content.decode("utf-8"))
+    except (tomllib.TOMLDecodeError, UnicodeDecodeError) as exc:
+        raise DriveCorruptedError(file_id, exc) from exc
+
+    raw_terms = parsed.get("terms", [])
+    if not isinstance(raw_terms, list):
+        return [], etag
+    return [str(t).strip() for t in raw_terms if str(t).strip()], etag
+
+
+# ---- Drive REST primitives: write helpers -----------------------------------
+
+DRIVE_UPLOAD_BASE = "https://www.googleapis.com/upload/drive/v3"
+
+
+class DriveConcurrentWriteError(Exception):
+    """Raised on 412 Precondition Failed — another device wrote first.
+
+    Caller (sync_now) should re-read remote state and retry the merge.
+    """
+
+
+def _serialize_terms(terms: list[str]) -> bytes:
+    """Encode a term list as the same TOML shape DictionaryStore writes."""
+    return tomli_w.dumps({"version": 1, "terms": terms}).encode("utf-8")
+
+
+async def _drive_put_dictionary(
+    *,
+    access_token: str,
+    file_id: str | None,
+    etag: str | None,
+    terms: list[str],
+) -> str:
+    """Upload dictionary.toml to Drive App Data. Creates if file_id is None,
+    updates with If-Match guard otherwise.
+
+    Returns the file_id (new or same).
+
+    Raises:
+        DriveConcurrentWriteError: 412 on update; caller re-reads + retries.
+        httpx.HTTPError: other transport / 5xx errors.
+    """
+    body = _serialize_terms(terms)
+    headers = {"Authorization": f"Bearer {access_token}"}
+
+    async with httpx.AsyncClient(timeout=20.0, headers=headers) as client:
+        if file_id is None:
+            # Multipart create — metadata + media in one request.
+            metadata = {
+                "name": DRIVE_FILE_NAME,
+                "parents": ["appDataFolder"],
+            }
+            metadata_bytes = json.dumps(metadata).encode("utf-8")
+            files = {
+                "metadata": ("metadata", metadata_bytes, "application/json"),
+                "media": (DRIVE_FILE_NAME, body, "application/toml"),
+            }
+            resp = await client.post(
+                f"{DRIVE_UPLOAD_BASE}/files",
+                params={"uploadType": "multipart"},
+                files=files,
+            )
+            resp.raise_for_status()
+            new_id: str = resp.json()["id"]
+            return new_id
+
+        # Update existing — PATCH content with If-Match guard.
+        update_headers = {"Content-Type": "application/toml"}
+        if etag is not None:
+            update_headers["If-Match"] = etag
+        resp = await client.patch(
+            f"{DRIVE_UPLOAD_BASE}/files/{file_id}",
+            params={"uploadType": "media"},
+            content=body,
+            headers=update_headers,
+        )
+        if resp.status_code == 412:
+            raise DriveConcurrentWriteError(
+                f"ETag mismatch for file {file_id}; another device wrote first"
+            )
+        resp.raise_for_status()
+        returned_id: str = resp.json().get("id", file_id)
+        return returned_id
+
+
+async def _drive_rename_corrupted(*, access_token: str, file_id: str) -> None:
+    """Rename a Drive file to dictionary.toml.broken-<UTC-timestamp>.
+
+    Mirrors ConfigStore._backup_broken's pattern: don't delete corrupt
+    data; archive it so the user (or future debugging) can recover.
+    """
+    ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    new_name = f"{DRIVE_FILE_NAME}.broken-{ts}"
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json",
+    }
+    async with httpx.AsyncClient(timeout=10.0, headers=headers) as client:
+        resp = await client.patch(
+            f"{DRIVE_API_BASE}/files/{file_id}",
+            content=json.dumps({"name": new_name}),
+        )
+        resp.raise_for_status()
