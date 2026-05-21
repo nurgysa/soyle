@@ -522,6 +522,19 @@ class SoyleApp(QObject):
             "Без ключа можно работать — получите сырую транскрипцию.",
         )
         log.info("first_run_wizard_shown")
+        # Offer Drive sync after the API-key toast has time to land; modal
+        # dialogs during warm-up create focus races, so we use a toast and
+        # let the user dismiss by ignoring. The actual Connect button lives
+        # in Settings → Cloud Sync (Task 15).
+        QTimer.singleShot(2000, self._offer_drive_sync_step)
+
+    def _offer_drive_sync_step(self) -> None:
+        self._tray.toast(
+            "Söyle — Cloud Sync",
+            "Подключите Google Drive в Settings → Cloud Sync, чтобы "
+            "синхронизировать словарь между устройствами и иметь backup.",
+            level="info",
+        )
 
     def _reload_config(self) -> None:
         self._cfg = self._store.load()
