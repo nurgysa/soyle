@@ -18,10 +18,12 @@ from soyle.core.cloud_sync import (
     DRIVE_UPLOAD_BASE,
     KEYRING_SERVICE,
     KEYRING_USERNAME,
+    OAUTH_REVOKE_URL,
     OAUTH_TOKEN_URL,
     CloudSync,
     DriveConcurrentWriteError,
     DriveCorruptedError,
+    RestoreOption,
     SyncOutcome,
     _derive_code_challenge,
     _drive_get_dictionary,
@@ -853,3 +855,108 @@ async def test_complete_oauth_flow_exchanges_code_and_stores_token(
 
     assert cloud_sync.is_connected is True
     assert cloud_sync._token_store.load() == "1//refresh-stored"
+
+
+# ---- detect_existing_backup + disconnect -----------------------------------
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_detect_existing_backup_returns_none_when_no_file(
+    cloud_sync,
+) -> None:
+    cloud_sync._token_store.save("1//refresh")
+    respx.post(OAUTH_TOKEN_URL).mock(
+        return_value=httpx.Response(200, json={"access_token": "ya29.x"})
+    )
+    respx.get(f"{DRIVE_API_BASE}/files").mock(
+        return_value=httpx.Response(200, json={"files": []})
+    )
+    result = await cloud_sync.detect_existing_backup()
+    assert result is None
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_detect_existing_backup_returns_metadata(cloud_sync) -> None:
+    cloud_sync._token_store.save("1//refresh")
+    respx.post(OAUTH_TOKEN_URL).mock(
+        return_value=httpx.Response(200, json={"access_token": "ya29.x"})
+    )
+    respx.get(f"{DRIVE_API_BASE}/files").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "files": [
+                    {
+                        "id": "id-1",
+                        "name": "dictionary.toml",
+                        "modifiedTime": "2026-04-29T10:00:00.000Z",
+                    }
+                ]
+            },
+        )
+    )
+    respx.get(f"{DRIVE_API_BASE}/files/id-1").mock(
+        return_value=httpx.Response(
+            200, content=b'version = 1\nterms = ["A", "B", "C"]\n',
+        )
+    )
+
+    result = await cloud_sync.detect_existing_backup()
+    assert result is not None
+    assert isinstance(result, RestoreOption)
+    assert result.term_count == 3
+    assert result.last_modified.isoformat().startswith("2026-04-29T10:00:00")
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_detect_existing_backup_excludes_trashed_files(cloud_sync) -> None:
+    """Defensive guard mirroring _drive_get_dictionary (fixed in PR #11):
+    without trashed=false, Drive returns user-trashed-but-not-purged
+    backups and detection resolves to the wrong file.
+    """
+    cloud_sync._token_store.save("1//refresh")
+    respx.post(OAUTH_TOKEN_URL).mock(
+        return_value=httpx.Response(200, json={"access_token": "ya29.x"})
+    )
+    route = respx.get(f"{DRIVE_API_BASE}/files").mock(
+        return_value=httpx.Response(200, json={"files": []})
+    )
+    await cloud_sync.detect_existing_backup()
+    assert route.called
+    q_param = route.calls[0].request.url.params.get("q")
+    assert q_param is not None
+    assert "trashed=false" in q_param
+    assert f"name='{DRIVE_FILE_NAME}'" in q_param
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_disconnect_revokes_and_clears_state(cloud_sync) -> None:
+    cloud_sync._token_store.save("1//refresh")
+    cfg = cloud_sync._config_store.load()
+    cfg.cloud_sync.last_synced_at = datetime.now(UTC)
+    cloud_sync._config_store.save(cfg)
+
+    revoke_route = respx.post(OAUTH_REVOKE_URL).mock(
+        return_value=httpx.Response(200)
+    )
+    await cloud_sync.disconnect()
+
+    assert cloud_sync.is_connected is False
+    assert cloud_sync.last_synced_at is None
+    assert revoke_route.called
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_disconnect_swallows_revoke_errors(cloud_sync) -> None:
+    """Revoke might 400 on already-invalid token; clear local state anyway."""
+    cloud_sync._token_store.save("1//refresh")
+    respx.post(OAUTH_REVOKE_URL).mock(
+        return_value=httpx.Response(400, json={"error": "invalid_token"})
+    )
+    await cloud_sync.disconnect()  # must not raise
+    assert cloud_sync.is_connected is False

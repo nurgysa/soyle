@@ -290,6 +290,18 @@ class SyncResult:
     error_detail: str | None = None
 
 
+@dataclass(frozen=True)
+class RestoreOption:
+    """Metadata about an existing Drive backup, surfaced to the wizard.
+
+    Returned by detect_existing_backup() when the user reconnects on a new
+    device and we need to ask "restore this backup, or start fresh?".
+    """
+
+    term_count: int
+    last_modified: datetime
+
+
 class CloudSync:
     """Coordinator for Google Drive sync of dictionary.toml.
 
@@ -394,6 +406,92 @@ class CloudSync:
             self._oauth_listener.shutdown()
             self._oauth_listener = None
             self._oauth_verifier = None
+
+    # -- Connection lifecycle -------------------------------------------------
+
+    async def detect_existing_backup(self) -> RestoreOption | None:
+        """Probe Drive App Data for dictionary.toml; return metadata if present.
+
+        Returns None if no backup exists OR not connected (callers handle
+        these the same way: just enable sync going forward, no restore
+        prompt). Transient errors (network, token revocation) also resolve
+        to None — the wizard's restore prompt is best-effort UI, not a
+        correctness gate.
+        """
+        refresh_token = self._token_store.load()
+        if refresh_token is None:
+            return None
+        try:
+            access = await _refresh_access_token(
+                client_id=self._client_id, refresh_token=refresh_token,
+            )
+        except (OAuthAuthRevokedError, httpx.HTTPError):
+            return None
+
+        headers = {"Authorization": f"Bearer {access}"}
+        async with httpx.AsyncClient(timeout=15.0, headers=headers) as client:
+            list_resp = await client.get(
+                f"{DRIVE_API_BASE}/files",
+                params={
+                    "spaces": "appDataFolder",
+                    # trashed=false: same defensive guard as
+                    # _drive_get_dictionary / _lookup_file_id (PR #11) —
+                    # without it, Drive returns user-trashed files and
+                    # detection resolves to the wrong dictionary.toml.
+                    "q": f"name='{DRIVE_FILE_NAME}' and trashed=false",
+                    "fields": "files(id,modifiedTime)",
+                },
+            )
+            list_resp.raise_for_status()
+            files = list_resp.json().get("files", [])
+            if not files:
+                return None
+            file_id = files[0]["id"]
+            modified_iso = files[0].get("modifiedTime", "")
+
+            content_resp = await client.get(
+                f"{DRIVE_API_BASE}/files/{file_id}", params={"alt": "media"},
+            )
+            content_resp.raise_for_status()
+
+        try:
+            parsed = tomllib.loads(content_resp.content.decode("utf-8"))
+            terms = parsed.get("terms", [])
+            term_count = len(terms) if isinstance(terms, list) else 0
+        except (tomllib.TOMLDecodeError, UnicodeDecodeError):
+            term_count = 0
+
+        # Drive emits RFC 3339 with a trailing Z; fromisoformat needs
+        # +00:00 on Python <3.11 and accepts both on 3.11+. Normalize for
+        # portability either way.
+        normalized = modified_iso.replace("Z", "+00:00")
+        last_modified = (
+            datetime.fromisoformat(normalized) if normalized else datetime.now(UTC)
+        )
+
+        return RestoreOption(term_count=term_count, last_modified=last_modified)
+
+    async def disconnect(self) -> None:
+        """Revoke token at Google, clear keyring, reset last_synced_at.
+
+        Local dictionary.toml on disk is intentionally preserved — the
+        user can reconnect later (same account or different) without
+        losing their dictionary. Revoke is best-effort: a 4xx/network
+        failure doesn't block clearing local state, otherwise an
+        already-invalid token would trap the user in "connected" forever.
+        """
+        refresh_token = self._token_store.load()
+        if refresh_token is not None:
+            with contextlib.suppress(httpx.HTTPError):
+                async with httpx.AsyncClient(timeout=10.0) as client:
+                    await client.post(
+                        OAUTH_REVOKE_URL, params={"token": refresh_token},
+                    )
+        self._token_store.clear()
+        cfg = self._config_store.load()
+        cfg.cloud_sync.last_synced_at = None
+        self._config_store.save(cfg)
+        _log.info("cloud_sync_disconnected")
 
     # -- Sync entry point -----------------------------------------------------
 
