@@ -344,7 +344,10 @@ async def _drive_get_dictionary(
             f"{DRIVE_API_BASE}/files",
             params={
                 "spaces": "appDataFolder",
-                "q": f"name='{DRIVE_FILE_NAME}'",
+                # trashed=false excludes user-deleted-but-not-purged files;
+                # without it, files.list returns trashed items by default and
+                # files[0] can resolve to the wrong dictionary.toml.
+                "q": f"name='{DRIVE_FILE_NAME}' and trashed=false",
                 "fields": "files(id,name,modifiedTime)",
             },
         )
