@@ -12,11 +12,15 @@ import pytest
 import respx
 
 from soyle.core.cloud_sync import (
+    DRIVE_API_BASE,
+    DRIVE_FILE_NAME,
     KEYRING_SERVICE,
     KEYRING_USERNAME,
     OAUTH_TOKEN_URL,
     CloudSync,
+    DriveCorruptedError,
     _derive_code_challenge,
+    _drive_get_dictionary,
     _exchange_code_for_tokens,
     _generate_code_verifier,
     _OAuthCallbackListener,
@@ -365,3 +369,57 @@ def test_should_run_scheduled_true_when_never_synced(cloud_sync) -> None:
     """Connected but last_synced_at=None → first sync should run."""
     cloud_sync._token_store.save("1//refresh")
     assert cloud_sync.should_run_scheduled() is True
+
+
+# ---- Drive REST primitives: GET (Task 8) ------------------------------------
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_drive_get_returns_empty_when_file_missing() -> None:
+    """First-ever sync — no file in App Data folder yet."""
+    respx.get(f"{DRIVE_API_BASE}/files").mock(
+        return_value=httpx.Response(200, json={"files": []})
+    )
+    terms, etag = await _drive_get_dictionary(access_token="ya29.x")
+    assert terms == []
+    assert etag is None
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_drive_get_returns_terms_and_etag() -> None:
+    """File exists — fetch metadata then content, parse TOML."""
+    file_id = "drive-file-id-abc"
+    respx.get(f"{DRIVE_API_BASE}/files").mock(
+        return_value=httpx.Response(
+            200,
+            json={"files": [{"id": file_id, "name": DRIVE_FILE_NAME}]},
+        )
+    )
+    respx.get(f"{DRIVE_API_BASE}/files/{file_id}").mock(
+        return_value=httpx.Response(
+            200,
+            content=b'version = 1\nterms = ["S\xc3\xb6yle", "Astana"]\n',
+            headers={"ETag": '"etag-1"'},
+        )
+    )
+    terms, etag = await _drive_get_dictionary(access_token="ya29.x")
+    assert terms == ["Söyle", "Astana"]
+    assert etag == '"etag-1"'
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_drive_get_raises_corrupted_on_invalid_toml() -> None:
+    """Garbled TOML in Drive → distinct error so caller can backup-rename."""
+    file_id = "id-x"
+    respx.get(f"{DRIVE_API_BASE}/files").mock(
+        return_value=httpx.Response(200, json={"files": [{"id": file_id}]})
+    )
+    respx.get(f"{DRIVE_API_BASE}/files/{file_id}").mock(
+        return_value=httpx.Response(200, content=b"not valid toml [")
+    )
+    with pytest.raises(DriveCorruptedError) as exc_info:
+        await _drive_get_dictionary(access_token="ya29.x")
+    assert exc_info.value.file_id == file_id

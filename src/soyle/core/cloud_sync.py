@@ -17,6 +17,7 @@ import hashlib
 import secrets
 import socketserver
 import threading
+import tomllib
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from http.server import BaseHTTPRequestHandler
@@ -299,3 +300,73 @@ class CloudSync:
         if last is None:
             return True
         return datetime.now(UTC) - last >= SYNC_INTERVAL
+
+
+# ---- Drive REST primitives --------------------------------------------------
+
+DRIVE_API_BASE = "https://www.googleapis.com/drive/v3"
+DRIVE_FILE_NAME = "dictionary.toml"
+
+
+class DriveCorruptedError(Exception):
+    """Raised when the file in Drive App Data has invalid TOML.
+
+    Carries file_id so the caller can rename the broken file out of the
+    way before uploading the local replacement.
+    """
+
+    def __init__(self, file_id: str, original: Exception) -> None:
+        super().__init__(f"Drive content not valid TOML (file_id={file_id})")
+        self.file_id = file_id
+        self.original = original
+
+
+async def _drive_get_dictionary(
+    *, access_token: str
+) -> tuple[list[str], str | None]:
+    """Fetch dictionary.toml from Drive App Data folder.
+
+    Returns:
+        (terms, etag) — terms is empty list if file doesn't exist yet;
+        etag is None in that case, otherwise the strong ETag header value
+        for use in subsequent If-Match write.
+
+    Raises:
+        DriveCorruptedError: file exists but content isn't valid TOML.
+        httpx.HTTPError: network or 5xx; caller silences for transients.
+    """
+    headers = {"Authorization": f"Bearer {access_token}"}
+    async with httpx.AsyncClient(timeout=15.0, headers=headers) as client:
+        # 1. List files in App Data folder filtered by name.
+        list_resp = await client.get(
+            f"{DRIVE_API_BASE}/files",
+            params={
+                "spaces": "appDataFolder",
+                "q": f"name='{DRIVE_FILE_NAME}'",
+                "fields": "files(id,name,modifiedTime)",
+            },
+        )
+        list_resp.raise_for_status()
+        files = list_resp.json().get("files", [])
+        if not files:
+            return [], None
+
+        file_id = files[0]["id"]
+
+        # 2. Download content + capture ETag.
+        get_resp = await client.get(
+            f"{DRIVE_API_BASE}/files/{file_id}",
+            params={"alt": "media"},
+        )
+        get_resp.raise_for_status()
+        etag = get_resp.headers.get("ETag")
+
+    try:
+        parsed = tomllib.loads(get_resp.content.decode("utf-8"))
+    except (tomllib.TOMLDecodeError, UnicodeDecodeError) as exc:
+        raise DriveCorruptedError(file_id, exc) from exc
+
+    raw_terms = parsed.get("terms", [])
+    if not isinstance(raw_terms, list):
+        return [], etag
+    return [str(t).strip() for t in raw_terms if str(t).strip()], etag
