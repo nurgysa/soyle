@@ -268,6 +268,12 @@ class _TokenStore:
 SYNC_INTERVAL = timedelta(hours=24)
 MAX_SYNC_RETRIES = 3  # cap on 412 (concurrent-write) retries per sync_now()
 
+# Marker substring shipped in app.py's _GOOGLE_CLIENT_ID before a real GCP
+# Desktop OAuth Client ID is plugged in. Used by is_configured for fail-fast
+# guarding (codex P1 follow-up on PR #16) — without this, begin_oauth_flow
+# would silently send users to a Google page that 4xx's with invalid_client.
+_PLACEHOLDER_CLIENT_ID_MARKER = "REPLACE_WITH_"
+
 
 class SyncOutcome(enum.Enum):
     """Terminal states of a sync_now() invocation. UI maps these to
@@ -325,6 +331,15 @@ class CloudSync:
     # -- State predicates -----------------------------------------------------
 
     @property
+    def is_configured(self) -> bool:
+        """True if a real OAuth client_id has been wired in.
+
+        False means the placeholder from app.py is still in effect — all
+        Google OAuth/refresh calls would 4xx with invalid_client.
+        """
+        return _PLACEHOLDER_CLIENT_ID_MARKER not in self._client_id
+
+    @property
     def is_connected(self) -> bool:
         """True if a refresh token is stored in keyring."""
         return self._token_store.load() is not None
@@ -353,7 +368,18 @@ class CloudSync:
         to block until Google redirects to localhost. The auth URL is
         returned mainly for testability — production code already opened
         it in the browser via webbrowser.open.
+
+        Raises:
+            RuntimeError: client_id is the placeholder. Fail-fast here so
+                the Settings UI gets a clear error instead of routing the
+                user to Google's "OAuth client was not found" page.
         """
+        if not self.is_configured:
+            raise RuntimeError(
+                "Google OAuth client_id is not configured (still the "
+                "placeholder). Set a real Desktop OAuth Client ID in "
+                "_GOOGLE_CLIENT_ID before connecting to Drive."
+            )
         verifier = _generate_code_verifier()
         challenge = _derive_code_challenge(verifier)
         listener = _OAuthCallbackListener()
