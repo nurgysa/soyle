@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import base64
 import contextlib
+import enum
 import hashlib
 import json
 import secrets
@@ -264,6 +265,27 @@ class _TokenStore:
 SYNC_INTERVAL = timedelta(hours=24)
 
 
+class SyncOutcome(enum.Enum):
+    """Terminal states of a sync_now() invocation. UI maps these to
+    user-visible toasts (or silence, for transient NETWORK)."""
+
+    OK = "ok"
+    NETWORK = "network_error"
+    AUTH_REVOKED = "auth_revoked"
+    QUOTA = "quota_exceeded"
+    APP_SUSPENDED = "app_suspended"
+    NOT_CONNECTED = "not_connected"
+    UNEXPECTED = "unexpected"
+
+
+@dataclass(frozen=True)
+class SyncResult:
+    outcome: SyncOutcome
+    added_local: int = 0
+    added_remote: int = 0
+    error_detail: str | None = None
+
+
 class CloudSync:
     """Coordinator for Google Drive sync of dictionary.toml.
 
@@ -302,6 +324,140 @@ class CloudSync:
         if last is None:
             return True
         return datetime.now(UTC) - last >= SYNC_INTERVAL
+
+    # -- Sync entry point -----------------------------------------------------
+
+    async def sync_now(self) -> SyncResult:
+        """Idempotent merge cycle. See spec §6.2."""
+        refresh_token = self._token_store.load()
+        if refresh_token is None:
+            return SyncResult(outcome=SyncOutcome.NOT_CONNECTED)
+
+        try:
+            access = await _refresh_access_token(
+                client_id=self._client_id, refresh_token=refresh_token
+            )
+        except OAuthAuthRevokedError:
+            self._token_store.clear()
+            _log.warning("cloud_sync_auth_revoked")
+            return SyncResult(outcome=SyncOutcome.AUTH_REVOKED)
+        except (httpx.ConnectError, httpx.ReadError, httpx.TimeoutException):
+            _log.warning("cloud_sync_network_error", phase="token_refresh")
+            return SyncResult(outcome=SyncOutcome.NETWORK)
+        except httpx.HTTPStatusError as exc:
+            return self._classify_drive_error(exc, phase="token_refresh")
+
+        return await self._sync_with_token(access)
+
+    async def _sync_with_token(self, access: str) -> SyncResult:
+        # Read remote (and look up file_id for the eventual write).
+        try:
+            remote, etag = await _drive_get_dictionary(access_token=access)
+            file_id = await self._lookup_file_id(access)
+        except DriveCorruptedError as corrupted:
+            _log.warning("cloud_sync_corrupted_remote", file_id=corrupted.file_id)
+            await _drive_rename_corrupted(
+                access_token=access, file_id=corrupted.file_id
+            )
+            remote, etag, file_id = [], None, None
+        except (httpx.ConnectError, httpx.ReadError, httpx.TimeoutException):
+            _log.warning("cloud_sync_network_error", phase="drive_get")
+            return SyncResult(outcome=SyncOutcome.NETWORK)
+        except httpx.HTTPStatusError as exc:
+            return self._classify_drive_error(exc, phase="drive_get")
+
+        # Pure-union merge.
+        local = self._dict_store.load()
+        merged = self._dict_store.merge_with(remote)
+        added_local = len(merged) - len(local)
+        added_remote = len(merged) - len(remote)
+
+        # Persist locally if changed.
+        if merged != local:
+            self._dict_store.save(merged)
+
+        # Upload if remote differs from merged.
+        if merged != remote:
+            try:
+                await _drive_put_dictionary(
+                    access_token=access,
+                    file_id=file_id,
+                    etag=etag,
+                    terms=merged,
+                )
+            except DriveConcurrentWriteError:
+                _log.info("cloud_sync_concurrent_write_detected")
+                # Idempotent retry — local now has merged terms; the next
+                # round-trip sees latest remote, unions in any new terms,
+                # and writes with a fresh etag.
+                return await self._sync_with_token(access)
+            except (httpx.ConnectError, httpx.ReadError, httpx.TimeoutException):
+                _log.warning("cloud_sync_network_error", phase="drive_put")
+                return SyncResult(outcome=SyncOutcome.NETWORK)
+            except httpx.HTTPStatusError as exc:
+                return self._classify_drive_error(exc, phase="drive_put")
+
+        # Stamp success.
+        cfg = self._config_store.load()
+        cfg.cloud_sync.last_synced_at = datetime.now(UTC)
+        self._config_store.save(cfg)
+        _log.info(
+            "cloud_sync_ok",
+            added_local=added_local,
+            added_remote=added_remote,
+            total_terms=len(merged),
+        )
+        return SyncResult(
+            outcome=SyncOutcome.OK,
+            added_local=added_local,
+            added_remote=added_remote,
+        )
+
+    async def _lookup_file_id(self, access_token: str) -> str | None:
+        """Re-list to find the file_id (since _drive_get_dictionary returns
+        terms but not id). Returns None if file doesn't exist."""
+        headers = {"Authorization": f"Bearer {access_token}"}
+        async with httpx.AsyncClient(timeout=10.0, headers=headers) as client:
+            resp = await client.get(
+                f"{DRIVE_API_BASE}/files",
+                params={
+                    "spaces": "appDataFolder",
+                    # trashed=false: see _drive_get_dictionary for rationale.
+                    "q": f"name='{DRIVE_FILE_NAME}' and trashed=false",
+                    "fields": "files(id)",
+                },
+            )
+        resp.raise_for_status()
+        files = resp.json().get("files", [])
+        if not files:
+            return None
+        file_id: str = files[0]["id"]
+        return file_id
+
+    @staticmethod
+    def _classify_drive_error(
+        exc: httpx.HTTPStatusError, *, phase: str,
+    ) -> SyncResult:
+        status = exc.response.status_code
+        body = exc.response.json() if exc.response.content else {}
+        reason = body.get("error", {}).get("errors", [{}])[0].get("reason", "")
+
+        if status == 403 and reason == "storageQuotaExceeded":
+            _log.warning("cloud_sync_quota_exceeded", phase=phase)
+            return SyncResult(outcome=SyncOutcome.QUOTA)
+        if status == 403 and reason == "appSuspended":
+            _log.error("cloud_sync_app_suspended", phase=phase)
+            return SyncResult(outcome=SyncOutcome.APP_SUSPENDED)
+        if 500 <= status < 600:
+            _log.warning("cloud_sync_5xx", phase=phase, status=status)
+            return SyncResult(outcome=SyncOutcome.NETWORK)
+
+        _log.error(
+            "cloud_sync_unexpected", phase=phase, status=status, reason=reason,
+        )
+        return SyncResult(
+            outcome=SyncOutcome.UNEXPECTED, error_detail=f"{status}: {reason}",
+        )
 
 
 # ---- Drive REST primitives --------------------------------------------------

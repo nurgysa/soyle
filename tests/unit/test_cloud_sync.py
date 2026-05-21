@@ -14,12 +14,14 @@ import respx
 from soyle.core.cloud_sync import (
     DRIVE_API_BASE,
     DRIVE_FILE_NAME,
+    DRIVE_UPLOAD_BASE,
     KEYRING_SERVICE,
     KEYRING_USERNAME,
     OAUTH_TOKEN_URL,
     CloudSync,
     DriveConcurrentWriteError,
     DriveCorruptedError,
+    SyncOutcome,
     _derive_code_challenge,
     _drive_get_dictionary,
     _drive_put_dictionary,
@@ -515,3 +517,234 @@ async def test_drive_rename_corrupted_appends_timestamp() -> None:
     assert route.called
     body = route.calls[0].request.content.decode("utf-8")
     assert "dictionary.toml.broken-" in body
+
+
+# ---- sync_now() merge cycle (Task 10) ---------------------------------------
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_sync_now_uploads_local_when_remote_empty(cloud_sync) -> None:
+    """First-ever sync from a device with terms — pure upload."""
+    cloud_sync._token_store.save("1//refresh")
+    cloud_sync._dict_store.save(["Söyle", "Astana"])
+
+    respx.post(OAUTH_TOKEN_URL).mock(
+        return_value=httpx.Response(200, json={"access_token": "ya29.x"})
+    )
+    respx.get(f"{DRIVE_API_BASE}/files").mock(
+        return_value=httpx.Response(200, json={"files": []})
+    )
+    respx.post(f"{DRIVE_UPLOAD_BASE}/files").mock(
+        return_value=httpx.Response(200, json={"id": "new-id"})
+    )
+
+    result = await cloud_sync.sync_now()
+    assert result.outcome is SyncOutcome.OK
+    assert result.added_remote == 2
+    assert result.added_local == 0
+    assert cloud_sync.last_synced_at is not None
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_sync_now_downloads_remote_when_local_empty(cloud_sync) -> None:
+    """New device — pulls existing backup."""
+    cloud_sync._token_store.save("1//refresh")
+
+    respx.post(OAUTH_TOKEN_URL).mock(
+        return_value=httpx.Response(200, json={"access_token": "ya29.x"})
+    )
+    respx.get(f"{DRIVE_API_BASE}/files").mock(
+        return_value=httpx.Response(
+            200, json={"files": [{"id": "id-1", "name": DRIVE_FILE_NAME}]}
+        )
+    )
+    respx.get(f"{DRIVE_API_BASE}/files/id-1").mock(
+        return_value=httpx.Response(
+            200,
+            content=b'version = 1\nterms = ["X", "Y"]\n',
+            headers={"ETag": '"e1"'},
+        )
+    )
+    # No upload needed — local now matches remote after merge.
+
+    result = await cloud_sync.sync_now()
+    assert result.outcome is SyncOutcome.OK
+    assert result.added_local == 2
+    assert cloud_sync._dict_store.load() == ["X", "Y"]
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_sync_now_unions_when_both_have_unique_terms(cloud_sync) -> None:
+    cloud_sync._token_store.save("1//refresh")
+    cloud_sync._dict_store.save(["A", "B"])
+
+    respx.post(OAUTH_TOKEN_URL).mock(
+        return_value=httpx.Response(200, json={"access_token": "ya29.x"})
+    )
+    respx.get(f"{DRIVE_API_BASE}/files").mock(
+        return_value=httpx.Response(200, json={"files": [{"id": "id-x"}]})
+    )
+    respx.get(f"{DRIVE_API_BASE}/files/id-x").mock(
+        return_value=httpx.Response(
+            200,
+            content=b'version = 1\nterms = ["B", "C"]\n',
+            headers={"ETag": '"e1"'},
+        )
+    )
+    respx.patch(f"{DRIVE_UPLOAD_BASE}/files/id-x").mock(
+        return_value=httpx.Response(200, json={"id": "id-x"})
+    )
+
+    result = await cloud_sync.sync_now()
+    assert result.outcome is SyncOutcome.OK
+    assert result.added_local == 1   # got "C"
+    assert result.added_remote == 1  # uploaded "A"
+    assert cloud_sync._dict_store.load() == ["A", "B", "C"]
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_sync_now_skips_writes_when_already_in_sync(cloud_sync) -> None:
+    cloud_sync._token_store.save("1//refresh")
+    cloud_sync._dict_store.save(["A", "B"])
+
+    respx.post(OAUTH_TOKEN_URL).mock(
+        return_value=httpx.Response(200, json={"access_token": "ya29.x"})
+    )
+    respx.get(f"{DRIVE_API_BASE}/files").mock(
+        return_value=httpx.Response(200, json={"files": [{"id": "id-1"}]})
+    )
+    respx.get(f"{DRIVE_API_BASE}/files/id-1").mock(
+        return_value=httpx.Response(
+            200,
+            content=b'version = 1\nterms = ["A", "B"]\n',
+            headers={"ETag": '"e1"'},
+        )
+    )
+    upload_route = respx.patch(f"{DRIVE_UPLOAD_BASE}/files/id-1").mock(
+        return_value=httpx.Response(200, json={"id": "id-1"})
+    )
+
+    result = await cloud_sync.sync_now()
+    assert result.outcome is SyncOutcome.OK
+    assert result.added_local == 0
+    assert result.added_remote == 0
+    assert not upload_route.called  # no PUT — already in sync
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_sync_now_returns_network_on_connect_error(cloud_sync) -> None:
+    """Transient network error — silent fallback, no token clear."""
+    cloud_sync._token_store.save("1//refresh")
+    respx.post(OAUTH_TOKEN_URL).mock(side_effect=httpx.ConnectError("DNS"))
+
+    result = await cloud_sync.sync_now()
+    assert result.outcome is SyncOutcome.NETWORK
+    assert cloud_sync.is_connected is True  # token still there
+    assert cloud_sync.last_synced_at is None  # didn't update timestamp
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_sync_now_returns_auth_revoked_and_clears_keyring(cloud_sync) -> None:
+    cloud_sync._token_store.save("1//bad")
+    respx.post(OAUTH_TOKEN_URL).mock(
+        return_value=httpx.Response(400, json={"error": "invalid_grant"})
+    )
+
+    result = await cloud_sync.sync_now()
+    assert result.outcome is SyncOutcome.AUTH_REVOKED
+    assert cloud_sync.is_connected is False  # token cleared
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_sync_now_handles_corrupted_remote_with_rename_and_upload(
+    cloud_sync,
+) -> None:
+    cloud_sync._token_store.save("1//refresh")
+    cloud_sync._dict_store.save(["A"])
+
+    respx.post(OAUTH_TOKEN_URL).mock(
+        return_value=httpx.Response(200, json={"access_token": "ya29.x"})
+    )
+    respx.get(f"{DRIVE_API_BASE}/files").mock(
+        return_value=httpx.Response(200, json={"files": [{"id": "broken"}]})
+    )
+    respx.get(f"{DRIVE_API_BASE}/files/broken").mock(
+        return_value=httpx.Response(200, content=b"not toml [[[")
+    )
+    rename_route = respx.patch(f"{DRIVE_API_BASE}/files/broken").mock(
+        return_value=httpx.Response(200, json={"id": "broken"})
+    )
+    create_route = respx.post(f"{DRIVE_UPLOAD_BASE}/files").mock(
+        return_value=httpx.Response(200, json={"id": "new-id"})
+    )
+
+    result = await cloud_sync.sync_now()
+    assert result.outcome is SyncOutcome.OK  # corruption recovered transparently
+    assert rename_route.called
+    assert create_route.called  # fresh upload of local
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_sync_now_retries_on_412_concurrent_write(cloud_sync) -> None:
+    """ETag mismatch → re-read + re-merge + re-write."""
+    cloud_sync._token_store.save("1//refresh")
+    cloud_sync._dict_store.save(["A"])
+
+    respx.post(OAUTH_TOKEN_URL).mock(
+        return_value=httpx.Response(200, json={"access_token": "ya29.x"})
+    )
+    respx.get(f"{DRIVE_API_BASE}/files").mock(
+        return_value=httpx.Response(200, json={"files": [{"id": "x"}]})
+    )
+    get_route = respx.get(f"{DRIVE_API_BASE}/files/x").mock(
+        side_effect=[
+            httpx.Response(
+                200, content=b'version=1\nterms=["B"]\n', headers={"ETag": '"e1"'}
+            ),
+            httpx.Response(
+                200, content=b'version=1\nterms=["B","C"]\n', headers={"ETag": '"e2"'}
+            ),
+        ]
+    )
+    patch_route = respx.patch(f"{DRIVE_UPLOAD_BASE}/files/x").mock(
+        side_effect=[
+            httpx.Response(412, json={"error": "precondition"}),  # first try fails
+            httpx.Response(200, json={"id": "x"}),  # retry succeeds
+        ]
+    )
+
+    result = await cloud_sync.sync_now()
+    assert result.outcome is SyncOutcome.OK
+    assert get_route.call_count == 2
+    assert patch_route.call_count == 2
+    # Final local state: A + B + C
+    assert cloud_sync._dict_store.load() == ["A", "B", "C"]
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_lookup_file_id_excludes_trashed_files(cloud_sync) -> None:
+    """Defensive guard: _lookup_file_id must filter trashed too.
+
+    The same bug pattern PR #11 fixed in _drive_get_dictionary applies here:
+    listing without `trashed=false` can return a trashed dictionary.toml and
+    cause sync to update the wrong file. Pin the query shape.
+    """
+    route = respx.get(f"{DRIVE_API_BASE}/files").mock(
+        return_value=httpx.Response(200, json={"files": []})
+    )
+    result = await cloud_sync._lookup_file_id("ya29.x")
+    assert result is None
+    assert route.called
+    q_param = route.calls[0].request.url.params.get("q")
+    assert q_param is not None
+    assert "trashed=false" in q_param
+    assert f"name='{DRIVE_FILE_NAME}'" in q_param
