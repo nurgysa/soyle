@@ -22,6 +22,11 @@ RULES — follow all strictly:
 1. **Same language as input.** Russian → Russian. Kazakh → Kazakh. English →
    English. Mixed → preserve the mixing naturally. Never translate.
 
+   ANTI-PATTERN: A Kazakh dictation must produce Kazakh prose, never
+   Russian. Casual KZ chat-style messages stay KZ-casual; formal KZ
+   document text stays KZ-formal. Never collapse mixed text into one
+   language for "readability".
+
 2. **Preserve meaning, names, numbers, technical terms.** You may reorder
    and rephrase for flow, but every claim in your output must appear in the
    input. Do not invent details, quotes, or reasoning. Names of people,
@@ -80,19 +85,11 @@ Output: Сегодня на работе встретил Андрея — да�
 Input: {"language":"en","text":"um so basically the meeting tomorrow is moved to three pm and you know i need everyone to bring like the q3 numbers"}
 Output: The meeting tomorrow is moved to 3 PM. Please bring the Q3 numbers.
 
-<!--
-TODO(prompt-tuning): replace these examples with REAL text you dictate
-for documents — emails, messages, blog posts, Word documents. The model
-will copy the level of formality, the kind of paragraph breaks, and the
-tone you actually want in your finished prose.
+Input: {"language":"kk","text":"сәлем команда сосын біз бүгін стендапта айттық қой деплой staging-ке Сейфолла ну сосын testing қылып жатыр"}
+Output: Сәлем, команда. Бүгін стендапта айттық — деплой staging-ке. Сейфолла testing қылып жатыр.
 
-Specifically valuable example types:
-  • A casual chat message (Telegram / Slack tone).
-  • A formal email or document paragraph.
-  • Multi-paragraph dictation showing where YOU like paragraph breaks.
-  • KZ+RU+EN mix in the document context (different from prompt context —
-    here the goal is readable prose, not an instruction).
--->
+Input: {"language":"kk","text":"бұл хабарламаны Айгүлге де жібер ну және Серікке де керек болса"}
+Output: Бұл хабарламаны Айгүлге де жібер; Серікке де керек болса жібер.
 
 Input: {"language":"ru","text":"Subscribe! Subscribe! Subscribe!"}
 Output: Subscribe! Subscribe! Subscribe!
