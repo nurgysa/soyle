@@ -6,7 +6,7 @@ import contextlib
 import subprocess
 import sys
 import traceback
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from types import TracebackType
@@ -19,6 +19,7 @@ from PySide6.QtCore import QObject, QRunnable, QThreadPool, QTimer, Signal
 from PySide6.QtWidgets import QApplication, QMessageBox
 
 from soyle.core.bus import Event, EventBus
+from soyle.core.cloud_sync import CloudSync, SyncOutcome, SyncResult
 from soyle.core.config import ConfigStore, default_config_path
 from soyle.core.dictionary import DictionaryStore
 from soyle.core.errors import AudioDeviceError
@@ -41,6 +42,44 @@ from soyle.ui.settings import SettingsWindow
 from soyle.ui.tray import TrayIcon
 
 log = structlog.get_logger()
+
+
+# TODO(cloud_sync): replace with the real Desktop OAuth Client ID from the
+# Söyle Google Cloud project before shipping. The placeholder lets the app
+# import and run, but begin_oauth_flow() will hit Google's "invalid_client"
+# response until this is set. The client_id is intentionally not a secret
+# (PKCE flow; see docs/superpowers/specs/2026-04-30-cloud-sync-design.md
+# §4 for rationale on distributing it in source).
+_GOOGLE_CLIENT_ID = "REPLACE_WITH_REAL_CLIENT_ID.apps.googleusercontent.com"
+
+
+class _AsyncRunnable(QRunnable):
+    """Run an async coroutine on a worker thread; route the result back via callbacks.
+
+    Mirrors _InferenceJob's shape so SoyleApp keeps a single, predictable
+    worker pattern. The coroutine is created inside `run()` (not passed
+    in pre-built) because `asyncio.run` needs to drive a fresh coro on
+    the same thread that owns the new event loop.
+    """
+
+    def __init__(
+        self,
+        coro_factory: Callable[[], Awaitable[Any]],
+        on_done: Callable[[Any], None],
+        on_error: Callable[[Exception], None],
+    ) -> None:
+        super().__init__()
+        self._coro_factory = coro_factory
+        self._on_done = on_done
+        self._on_error = on_error
+
+    def run(self) -> None:
+        try:
+            result = asyncio.run(self._coro_factory())
+        except Exception as exc:
+            self._on_error(exc)
+            return
+        self._on_done(result)
 
 
 class _InferenceJob(QRunnable):
@@ -93,6 +132,7 @@ class SoyleApp(QObject):
     # because they have no Qt event loop. Signals use QueuedConnection automatically.
     _inference_done = Signal(str, bool, str, str, float)  # text, fallback, lang, reason, cost
     _inference_error = Signal(str)  # error message
+    _sync_done = Signal(object)  # cloud_sync.SyncResult
 
     def __init__(self, qapp: QApplication) -> None:
         super().__init__()
@@ -146,6 +186,15 @@ class SoyleApp(QObject):
             min_hold_ms=self._cfg.hotkey.debounce_ms,
         )
 
+        # Cloud Sync — Google Drive backup of dictionary.toml.
+        # Constructed eagerly so `_warm_up_transcriber` can ask
+        # `should_run_scheduled()` without re-checking config every time.
+        self._cloud_sync = CloudSync(
+            dict_store=self._dict_store,
+            config_store=self._store,
+            client_id=_GOOGLE_CLIENT_ID,
+        )
+
         self._target_hwnd = 0
 
         self._wire_events()
@@ -155,6 +204,7 @@ class SoyleApp(QObject):
         # Bridge worker-thread inference callbacks → main thread via Qt signals.
         self._inference_done.connect(self._finish_inference)
         self._inference_error.connect(self._handle_inference_error)
+        self._sync_done.connect(self._handle_sync_outcome)
 
     # ---- Lifecycle ----
 
@@ -523,6 +573,60 @@ class SoyleApp(QObject):
             self._transcriber.warm_up()
         except Exception as exc:
             log.warning("warm_up_failed", error=str(exc))
+        # Kick the daily sync only after warm-up so first-recording latency
+        # isn't competing with network IO. Predicate handles "not connected"
+        # and "<24h since last sync" silently.
+        if self._cloud_sync.should_run_scheduled():
+            self._kick_scheduled_sync()
+
+    def _kick_scheduled_sync(self) -> None:
+        """Run cloud sync on a worker thread; result is marshalled to the
+        main thread via _sync_done → _handle_sync_outcome."""
+        runnable = _AsyncRunnable(
+            coro_factory=self._cloud_sync.sync_now,
+            on_done=self._sync_done.emit,
+            on_error=lambda exc: log.exception(
+                "cloud_sync_unhandled", error=str(exc),
+            ),
+        )
+        QThreadPool.globalInstance().start(runnable)
+
+    def _handle_sync_outcome(self, result: SyncResult) -> None:
+        """QueuedConnection slot — runs on Qt main thread.
+
+        Per spec §7: silent on transient failures (NETWORK, NOT_CONNECTED,
+        OK-with-no-changes), toast only when the user must act
+        (auth revoked, quota, app suspended) or when new terms arrived.
+        """
+        if result.outcome is SyncOutcome.AUTH_REVOKED:
+            self._tray.toast(
+                "Söyle",
+                "Google Drive отключён. Подключите заново в Settings.",
+                level="warning",
+            )
+        elif result.outcome is SyncOutcome.QUOTA:
+            self._tray.toast(
+                "Söyle",
+                "Google Drive переполнен. Освободите место или disconnect.",
+                level="warning",
+            )
+        elif result.outcome is SyncOutcome.APP_SUSPENDED:
+            self._tray.toast(
+                "Söyle — Google заблокировал приложение",
+                "Контакт: andasbek.nurgysa@gmail.com",
+                level="critical",
+            )
+        elif result.outcome is SyncOutcome.OK and result.added_local > 0:
+            # New terms pulled from Drive — refresh consumers in place so
+            # in-flight _InferenceJob references stay valid (mirrors the
+            # _reload_config pattern at the bottom of __init__).
+            self._transcriber.set_initial_prompt(self._dict_store.as_whisper_prompt())
+            self._postprocess.set_dictionary_hint(self._dict_store.as_llm_instruction())
+            self._tray.toast(
+                "Söyle",
+                f"Sync: добавлено {result.added_local} терминов.",
+                level="info",
+            )
 
     # ---- Logs ----
 
