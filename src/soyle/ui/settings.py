@@ -1,7 +1,7 @@
-"""Settings window with tabs: Hotkey, Audio, Whisper, PostProcess, UI, Dictionary, About."""
+"""Settings window with tabs: Hotkey, Audio, Whisper, PostProcess, Dictionary, Cloud Sync, UI, About."""
 from __future__ import annotations
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import QThreadPool, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -20,11 +20,14 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from soyle.core.cloud_sync import CloudSync, RestoreOption, SyncOutcome, SyncResult
 from soyle.core.config import Config, ConfigStore
 from soyle.core.dictionary import DictionaryStore
 from soyle.core.postprocess import POPULAR_MODELS
 from soyle.core.transcriber import WHISPER_MODELS
+from soyle.ui.async_runnable import AsyncRunnable
 from soyle.ui.shortcut_capture import ShortcutCaptureDialog
+from soyle.ui.tray import TrayIcon
 
 # Curated list of known-good push-to-talk keys. Editable combobox
 # falls back to arbitrary string input for anything not listed.
@@ -49,15 +52,26 @@ class SettingsWindow(QMainWindow):
     """Tabbed settings editor; saves Config via ConfigStore."""
 
     settings_saved = Signal()
+    # Cross-thread signals for the Cloud Sync tab's worker callbacks.
+    # AsyncRunnable.on_done/on_error fire on the QThreadPool worker; signals
+    # auto-marshal back to the main thread via QueuedConnection.
+    _cs_connect_done = Signal(object)  # RestoreOption | None
+    _cs_sync_done = Signal(object)  # SyncResult
+    _cs_disconnect_done = Signal()
+    _cs_action_failed = Signal(str)  # error message for toast
 
     def __init__(
         self,
         store: ConfigStore,
         dictionary_store: DictionaryStore | None = None,
+        cloud_sync: CloudSync | None = None,
+        tray: TrayIcon | None = None,
     ) -> None:
         super().__init__()
         self._store = store
         self._dict_store = dictionary_store or DictionaryStore()
+        self._cloud_sync = cloud_sync
+        self._tray = tray
         self._cfg: Config = store.load()
 
         self.setWindowTitle("Söyle — настройки")
@@ -72,9 +86,19 @@ class SettingsWindow(QMainWindow):
         self._tabs.addTab(self._build_whisper_tab(), "Whisper")
         self._tabs.addTab(self._build_postprocess_tab(), "LLM")
         self._tabs.addTab(self._build_dictionary_tab(), "Словарь")
+        # Cloud Sync sits right after Словарь — it backs up dictionary.toml,
+        # so users browsing dictionary settings stay in context.
+        if self._cloud_sync is not None:
+            self._tabs.addTab(self._build_cloud_sync_tab(), "Cloud Sync")
         self._tabs.addTab(self._build_ui_tab(), "Внешний вид")
         self._tabs.addTab(self._build_about_tab(), "О программе")
         root.addWidget(self._tabs)
+
+        # Wire the worker-thread signals to main-thread slots.
+        self._cs_connect_done.connect(self._on_connect_done)
+        self._cs_sync_done.connect(self._on_sync_done)
+        self._cs_disconnect_done.connect(self._on_disconnect_done)
+        self._cs_action_failed.connect(self._on_action_failed)
 
         btn_row = QHBoxLayout()
         btn_row.addStretch()
@@ -291,6 +315,163 @@ class SettingsWindow(QMainWindow):
         self._refresh_key_status()
         layout.addRow("", self._pp_key_status)
         return w
+
+    # ---- Cloud Sync tab ----
+
+    def _build_cloud_sync_tab(self) -> QWidget:
+        """Status + Connect/Sync/Disconnect controls for Google Drive backup.
+
+        Tab is only registered when CloudSync was injected (production path
+        — SoyleApp passes it). Tests that instantiate SettingsWindow alone
+        without CloudSync skip this tab gracefully.
+        """
+        w = QWidget()
+        layout = QVBoxLayout(w)
+
+        self._cs_status_label = QLabel(self._cloud_sync_status_text())
+        layout.addWidget(self._cs_status_label)
+
+        self._cs_last_synced_label = QLabel(self._cloud_sync_last_synced_text())
+        self._cs_last_synced_label.setStyleSheet("color: #888;")
+        layout.addWidget(self._cs_last_synced_label)
+
+        layout.addSpacing(16)
+
+        btn_row = QHBoxLayout()
+        self._cs_connect_btn = QPushButton("Подключить Google Drive")
+        self._cs_connect_btn.clicked.connect(self._on_cloud_sync_connect)
+        self._cs_sync_now_btn = QPushButton("Синхронизировать сейчас")
+        self._cs_sync_now_btn.clicked.connect(self._on_cloud_sync_sync_now)
+        self._cs_disconnect_btn = QPushButton("Отключить")
+        self._cs_disconnect_btn.clicked.connect(self._on_cloud_sync_disconnect)
+        btn_row.addWidget(self._cs_connect_btn)
+        btn_row.addWidget(self._cs_sync_now_btn)
+        btn_row.addWidget(self._cs_disconnect_btn)
+        btn_row.addStretch()
+        layout.addLayout(btn_row)
+
+        layout.addStretch()
+        self._refresh_cloud_sync_buttons()
+        return w
+
+    def _cloud_sync_status_text(self) -> str:
+        if self._cloud_sync is not None and self._cloud_sync.is_connected:
+            return "✓ Подключено к Google Drive"
+        return "Не подключено"
+
+    def _cloud_sync_last_synced_text(self) -> str:
+        if self._cloud_sync is None:
+            return ""
+        last = self._cloud_sync.last_synced_at
+        if last is None:
+            return "Последняя синхронизация: никогда"
+        local = last.astimezone()
+        return f"Последняя синхронизация: {local.strftime('%Y-%m-%d %H:%M')}"
+
+    def _refresh_cloud_sync_buttons(self) -> None:
+        connected = self._cloud_sync is not None and self._cloud_sync.is_connected
+        self._cs_connect_btn.setVisible(not connected)
+        self._cs_sync_now_btn.setVisible(connected)
+        self._cs_disconnect_btn.setVisible(connected)
+
+    def _on_cloud_sync_connect(self) -> None:
+        """Kick the OAuth flow on a worker; on completion offer restore."""
+        if self._cloud_sync is None:
+            return
+        self._toast(
+            "Söyle — Cloud Sync",
+            "Открыл браузер для авторизации в Google. Подтвердите и вернитесь.",
+            level="info",
+        )
+        runnable = AsyncRunnable(
+            coro_factory=self._connect_and_maybe_restore,
+            on_done=self._cs_connect_done.emit,
+            on_error=lambda exc: self._cs_action_failed.emit(
+                f"Не удалось подключить Drive: {type(exc).__name__}",
+            ),
+        )
+        QThreadPool.globalInstance().start(runnable)
+
+    async def _connect_and_maybe_restore(self) -> RestoreOption | None:
+        assert self._cloud_sync is not None  # button hidden when None
+        await self._cloud_sync.begin_oauth_flow()
+        await self._cloud_sync.complete_oauth_flow()
+        return await self._cloud_sync.detect_existing_backup()
+
+    def _on_connect_done(self, result: RestoreOption | None) -> None:
+        """Main-thread slot — refresh UI, optionally show restore prompt."""
+        self._refresh_cloud_sync_buttons()
+        self._cs_status_label.setText(self._cloud_sync_status_text())
+        if result is None:
+            self._toast(
+                "Söyle — Cloud Sync", "Подключено. Backup начнётся автоматически.",
+            )
+            return
+        box = QMessageBox(self)
+        box.setWindowTitle("Söyle — найден backup")
+        box.setText(
+            f"В Google Drive найден backup словаря: {result.term_count} терминов "
+            f"(обновлён {result.last_modified.strftime('%Y-%m-%d')}).\n\n"
+            f"Объединить с локальным словарём сейчас?"
+        )
+        box.setStandardButtons(
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if box.exec() == QMessageBox.StandardButton.Yes:
+            self._on_cloud_sync_sync_now()
+
+    def _on_cloud_sync_sync_now(self) -> None:
+        if self._cloud_sync is None:
+            return
+        runnable = AsyncRunnable(
+            coro_factory=self._cloud_sync.sync_now,
+            on_done=self._cs_sync_done.emit,
+            on_error=lambda exc: self._cs_action_failed.emit(
+                f"Sync error: {type(exc).__name__}",
+            ),
+        )
+        QThreadPool.globalInstance().start(runnable)
+
+    def _on_sync_done(self, result: SyncResult) -> None:
+        """Main-thread slot — refresh timestamp + toast on OK.
+
+        SoyleApp's _handle_sync_outcome already covers AUTH_REVOKED / QUOTA /
+        APP_SUSPENDED toasts at the app level. Here we only need the
+        Settings-tab-local update (timestamp + a confirmation toast for OK).
+        """
+        self._cs_last_synced_label.setText(self._cloud_sync_last_synced_text())
+        if result.outcome is SyncOutcome.OK:
+            self._toast(
+                "Söyle",
+                f"Sync OK. Локально +{result.added_local}, "
+                f"в Drive +{result.added_remote}.",
+            )
+
+    def _on_cloud_sync_disconnect(self) -> None:
+        if self._cloud_sync is None:
+            return
+        runnable = AsyncRunnable(
+            coro_factory=self._cloud_sync.disconnect,
+            on_done=lambda _result: self._cs_disconnect_done.emit(),
+            on_error=lambda exc: self._cs_action_failed.emit(
+                f"Disconnect failed: {type(exc).__name__}",
+            ),
+        )
+        QThreadPool.globalInstance().start(runnable)
+
+    def _on_disconnect_done(self) -> None:
+        self._refresh_cloud_sync_buttons()
+        self._cs_status_label.setText(self._cloud_sync_status_text())
+        self._cs_last_synced_label.setText(self._cloud_sync_last_synced_text())
+        self._toast("Söyle — Cloud Sync", "Отключено от Google Drive.")
+
+    def _on_action_failed(self, message: str) -> None:
+        self._toast("Söyle — Cloud Sync", message, level="warning")
+
+    def _toast(self, title: str, message: str, *, level: str = "info") -> None:
+        """No-op when tray wasn't injected (e.g. standalone test instance)."""
+        if self._tray is not None:
+            self._tray.toast(title, message, level=level)
 
     # ---- First-run wizard helpers ----
 

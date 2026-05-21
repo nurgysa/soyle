@@ -6,7 +6,7 @@ import contextlib
 import subprocess
 import sys
 import traceback
-from collections.abc import Callable, Coroutine
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from types import TracebackType
@@ -35,6 +35,7 @@ from soyle.platform.autostart import (
     enable_autostart,
 )
 from soyle.platform.single_instance import SingleInstance
+from soyle.ui.async_runnable import AsyncRunnable
 from soyle.ui.floating_button import FloatingButton
 from soyle.ui.indicator import Indicator
 from soyle.ui.resources import prompt_path, qss_path
@@ -51,35 +52,6 @@ log = structlog.get_logger()
 # (PKCE flow; see docs/superpowers/specs/2026-04-30-cloud-sync-design.md
 # §4 for rationale on distributing it in source).
 _GOOGLE_CLIENT_ID = "REPLACE_WITH_REAL_CLIENT_ID.apps.googleusercontent.com"
-
-
-class _AsyncRunnable(QRunnable):
-    """Run an async coroutine on a worker thread; route the result back via callbacks.
-
-    Mirrors _InferenceJob's shape so SoyleApp keeps a single, predictable
-    worker pattern. The coroutine is created inside `run()` (not passed
-    in pre-built) because `asyncio.run` needs to drive a fresh coro on
-    the same thread that owns the new event loop.
-    """
-
-    def __init__(
-        self,
-        coro_factory: Callable[[], Coroutine[Any, Any, Any]],
-        on_done: Callable[[Any], None],
-        on_error: Callable[[Exception], None],
-    ) -> None:
-        super().__init__()
-        self._coro_factory = coro_factory
-        self._on_done = on_done
-        self._on_error = on_error
-
-    def run(self) -> None:
-        try:
-            result: Any = asyncio.run(self._coro_factory())
-        except Exception as exc:
-            self._on_error(exc)
-            return
-        self._on_done(result)
 
 
 class _InferenceJob(QRunnable):
@@ -505,7 +477,10 @@ class SoyleApp(QObject):
     def _show_settings(self) -> None:
         if self._settings_window is None:
             self._settings_window = SettingsWindow(
-                self._store, dictionary_store=self._dict_store
+                self._store,
+                dictionary_store=self._dict_store,
+                cloud_sync=self._cloud_sync,
+                tray=self._tray,
             )
             self._settings_window.settings_saved.connect(self._reload_config)
         self._settings_window.show()
@@ -604,7 +579,7 @@ class SoyleApp(QObject):
     def _kick_scheduled_sync(self) -> None:
         """Run cloud sync on a worker thread; result is marshalled to the
         main thread via _sync_done → _handle_sync_outcome."""
-        runnable = _AsyncRunnable(
+        runnable = AsyncRunnable(
             coro_factory=self._cloud_sync.sync_now,
             on_done=self._sync_done.emit,
             on_error=lambda exc: log.exception(
