@@ -11,12 +11,15 @@ import pytest
 import respx
 
 from soyle.core.cloud_sync import (
+    KEYRING_SERVICE,
+    KEYRING_USERNAME,
     OAUTH_TOKEN_URL,
     _derive_code_challenge,
     _exchange_code_for_tokens,
     _generate_code_verifier,
     _OAuthCallbackListener,
     _refresh_access_token,
+    _TokenStore,
 )
 from soyle.core.errors import OAuthAuthRevokedError
 
@@ -233,3 +236,50 @@ async def test_refresh_access_token_logs_structured_error_for_non_invalid_grant_
         await _refresh_access_token(client_id="cid", refresh_token="1//refresh")
     # The body remains accessible for downstream debugging.
     assert exc_info.value.response.json()["error"] == "invalid_client"
+
+
+# ---- _TokenStore (Task 6) ---------------------------------------------------
+
+
+def test_token_store_save_and_load(mocker) -> None:
+    backing: dict[tuple[str, str], str] = {}
+    mocker.patch(
+        "soyle.core.cloud_sync.keyring.set_password",
+        side_effect=lambda s, u, p: backing.update({(s, u): p}),
+    )
+    mocker.patch(
+        "soyle.core.cloud_sync.keyring.get_password",
+        side_effect=lambda s, u: backing.get((s, u)),
+    )
+
+    store = _TokenStore()
+    assert store.load() is None
+
+    store.save("1//refresh-token-abc")
+    assert store.load() == "1//refresh-token-abc"
+    assert backing[(KEYRING_SERVICE, KEYRING_USERNAME)] == "1//refresh-token-abc"
+
+
+def test_token_store_clear(mocker) -> None:
+    deletions: list[tuple[str, str]] = []
+    mocker.patch(
+        "soyle.core.cloud_sync.keyring.delete_password",
+        side_effect=lambda s, u: deletions.append((s, u)),
+    )
+
+    store = _TokenStore()
+    store.clear()
+    assert deletions == [(KEYRING_SERVICE, KEYRING_USERNAME)]
+
+
+def test_token_store_clear_swallows_not_found(mocker) -> None:
+    """Deleting a non-existent token is a no-op, not an error."""
+    import keyring.errors
+
+    mocker.patch(
+        "soyle.core.cloud_sync.keyring.delete_password",
+        side_effect=keyring.errors.PasswordDeleteError("no such pw"),
+    )
+
+    store = _TokenStore()
+    store.clear()  # must not raise

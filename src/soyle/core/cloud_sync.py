@@ -23,6 +23,8 @@ from queue import Empty, Queue
 from urllib.parse import parse_qs, urlparse
 
 import httpx
+import keyring
+import keyring.errors
 import structlog
 
 from soyle.core.errors import OAuthAuthRevokedError
@@ -223,3 +225,29 @@ async def _refresh_access_token(*, client_id: str, refresh_token: str) -> str:
     # caller doesn't propagate Any through subsequent f-strings or logs.
     access_token: str = resp.json()["access_token"]
     return access_token
+
+
+# ---- Refresh-token storage (keyring) ----------------------------------------
+
+KEYRING_SERVICE = "Söyle Cloud"
+KEYRING_USERNAME = "google-refresh-token"
+
+
+class _TokenStore:
+    """Thin wrapper around keyring for the OAuth refresh token.
+
+    Encapsulates the (service, username) tuple and the
+    PasswordDeleteError-swallowing pattern used for ConfigStore's
+    clear_api_key. Mirrors the established Söyle keyring convention —
+    one entry per (service, username) pair.
+    """
+
+    def load(self) -> str | None:
+        return keyring.get_password(KEYRING_SERVICE, KEYRING_USERNAME)
+
+    def save(self, refresh_token: str) -> None:
+        keyring.set_password(KEYRING_SERVICE, KEYRING_USERNAME, refresh_token)
+
+    def clear(self) -> None:
+        with contextlib.suppress(keyring.errors.PasswordDeleteError):
+            keyring.delete_password(KEYRING_SERVICE, KEYRING_USERNAME)
