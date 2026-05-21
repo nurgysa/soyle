@@ -111,14 +111,21 @@ class DictionaryStore:
     # ---- Rendering helpers for callers ----
 
     def as_whisper_prompt(self) -> str:
-        """Return a Whisper-friendly hint string, or '' if empty.
+        """Return a Whisper-friendly hint string with language + glossary.
 
-        Kept short so it fits within faster-whisper's initial_prompt budget.
+        Always emits the "Languages: ..." prefix so auto-detect is biased
+        toward multilingual decoding even when the user's glossary is
+        empty. When terms exist, the glossary clause is appended for
+        vocabulary biasing.
+
+        Kept short so it fits within faster-whisper's ~224-token
+        initial_prompt budget (8 prefix tokens + up to MAX_TERMS terms).
         """
+        prefix = "Languages: Kazakh, Russian, English."
         terms = self.load()
         if not terms:
-            return ""
-        return "Glossary: " + ", ".join(terms) + "."
+            return prefix
+        return f"{prefix} Glossary: {', '.join(terms)}."
 
     def as_llm_instruction(self) -> str:
         """Return a clause for the LLM polish system prompt, or '' if empty."""
