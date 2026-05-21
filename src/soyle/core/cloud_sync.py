@@ -14,6 +14,7 @@ from __future__ import annotations
 import base64
 import contextlib
 import hashlib
+import json
 import secrets
 import socketserver
 import threading
@@ -28,6 +29,7 @@ import httpx
 import keyring
 import keyring.errors
 import structlog
+import tomli_w
 
 from soyle.core.config import ConfigStore
 from soyle.core.dictionary import DictionaryStore
@@ -370,3 +372,99 @@ async def _drive_get_dictionary(
     if not isinstance(raw_terms, list):
         return [], etag
     return [str(t).strip() for t in raw_terms if str(t).strip()], etag
+
+
+# ---- Drive REST primitives: write helpers -----------------------------------
+
+DRIVE_UPLOAD_BASE = "https://www.googleapis.com/upload/drive/v3"
+
+
+class DriveConcurrentWriteError(Exception):
+    """Raised on 412 Precondition Failed — another device wrote first.
+
+    Caller (sync_now) should re-read remote state and retry the merge.
+    """
+
+
+def _serialize_terms(terms: list[str]) -> bytes:
+    """Encode a term list as the same TOML shape DictionaryStore writes."""
+    return tomli_w.dumps({"version": 1, "terms": terms}).encode("utf-8")
+
+
+async def _drive_put_dictionary(
+    *,
+    access_token: str,
+    file_id: str | None,
+    etag: str | None,
+    terms: list[str],
+) -> str:
+    """Upload dictionary.toml to Drive App Data. Creates if file_id is None,
+    updates with If-Match guard otherwise.
+
+    Returns the file_id (new or same).
+
+    Raises:
+        DriveConcurrentWriteError: 412 on update; caller re-reads + retries.
+        httpx.HTTPError: other transport / 5xx errors.
+    """
+    body = _serialize_terms(terms)
+    headers = {"Authorization": f"Bearer {access_token}"}
+
+    async with httpx.AsyncClient(timeout=20.0, headers=headers) as client:
+        if file_id is None:
+            # Multipart create — metadata + media in one request.
+            metadata = {
+                "name": DRIVE_FILE_NAME,
+                "parents": ["appDataFolder"],
+            }
+            metadata_bytes = json.dumps(metadata).encode("utf-8")
+            files = {
+                "metadata": ("metadata", metadata_bytes, "application/json"),
+                "media": (DRIVE_FILE_NAME, body, "application/toml"),
+            }
+            resp = await client.post(
+                f"{DRIVE_UPLOAD_BASE}/files",
+                params={"uploadType": "multipart"},
+                files=files,
+            )
+            resp.raise_for_status()
+            new_id: str = resp.json()["id"]
+            return new_id
+
+        # Update existing — PATCH content with If-Match guard.
+        update_headers = {"Content-Type": "application/toml"}
+        if etag is not None:
+            update_headers["If-Match"] = etag
+        resp = await client.patch(
+            f"{DRIVE_UPLOAD_BASE}/files/{file_id}",
+            params={"uploadType": "media"},
+            content=body,
+            headers=update_headers,
+        )
+        if resp.status_code == 412:
+            raise DriveConcurrentWriteError(
+                f"ETag mismatch for file {file_id}; another device wrote first"
+            )
+        resp.raise_for_status()
+        returned_id: str = resp.json().get("id", file_id)
+        return returned_id
+
+
+async def _drive_rename_corrupted(*, access_token: str, file_id: str) -> None:
+    """Rename a Drive file to dictionary.toml.broken-<UTC-timestamp>.
+
+    Mirrors ConfigStore._backup_broken's pattern: don't delete corrupt
+    data; archive it so the user (or future debugging) can recover.
+    """
+    ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    new_name = f"{DRIVE_FILE_NAME}.broken-{ts}"
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json",
+    }
+    async with httpx.AsyncClient(timeout=10.0, headers=headers) as client:
+        resp = await client.patch(
+            f"{DRIVE_API_BASE}/files/{file_id}",
+            content=json.dumps({"name": new_name}),
+        )
+        resp.raise_for_status()

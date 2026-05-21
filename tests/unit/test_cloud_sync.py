@@ -18,9 +18,12 @@ from soyle.core.cloud_sync import (
     KEYRING_USERNAME,
     OAUTH_TOKEN_URL,
     CloudSync,
+    DriveConcurrentWriteError,
     DriveCorruptedError,
     _derive_code_challenge,
     _drive_get_dictionary,
+    _drive_put_dictionary,
+    _drive_rename_corrupted,
     _exchange_code_for_tokens,
     _generate_code_verifier,
     _OAuthCallbackListener,
@@ -423,3 +426,71 @@ async def test_drive_get_raises_corrupted_on_invalid_toml() -> None:
     with pytest.raises(DriveCorruptedError) as exc_info:
         await _drive_get_dictionary(access_token="ya29.x")
     assert exc_info.value.file_id == file_id
+
+
+# ---- Drive REST primitives: PUT + rename (Task 9) ---------------------------
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_drive_put_creates_new_file_when_no_id() -> None:
+    """First sync: no existing file → multipart create."""
+    respx.post(
+        f"{DRIVE_API_BASE.replace('drive/v3', 'upload/drive/v3')}/files"
+    ).mock(return_value=httpx.Response(200, json={"id": "new-file-id"}))
+    new_id = await _drive_put_dictionary(
+        access_token="ya29.x", file_id=None, etag=None, terms=["A", "B"]
+    )
+    assert new_id == "new-file-id"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_drive_put_updates_existing_with_etag() -> None:
+    """Subsequent sync: file_id known, If-Match guard set."""
+    file_id = "existing-id"
+    upload_url = (
+        f"{DRIVE_API_BASE.replace('drive/v3', 'upload/drive/v3')}/files/{file_id}"
+    )
+    route = respx.patch(upload_url).mock(
+        return_value=httpx.Response(200, json={"id": file_id})
+    )
+    same_id = await _drive_put_dictionary(
+        access_token="ya29.x", file_id=file_id, etag='"abc"', terms=["A"]
+    )
+    assert same_id == file_id
+    assert route.called
+    sent_request = route.calls[0].request
+    assert sent_request.headers.get("If-Match") == '"abc"'
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_drive_put_raises_concurrent_write_on_412() -> None:
+    """ETag mismatch → caller re-reads and retries."""
+    file_id = "x"
+    upload_url = (
+        f"{DRIVE_API_BASE.replace('drive/v3', 'upload/drive/v3')}/files/{file_id}"
+    )
+    respx.patch(upload_url).mock(
+        return_value=httpx.Response(412, json={"error": "precondition"})
+    )
+    with pytest.raises(DriveConcurrentWriteError):
+        await _drive_put_dictionary(
+            access_token="ya29.x", file_id=file_id, etag='"stale"', terms=["A"]
+        )
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_drive_rename_corrupted_appends_timestamp() -> None:
+    """Corrupted file gets renamed to dictionary.toml.broken-<ts> then uploads
+    proceed."""
+    file_id = "broken-id"
+    route = respx.patch(f"{DRIVE_API_BASE}/files/{file_id}").mock(
+        return_value=httpx.Response(200, json={"id": file_id})
+    )
+    await _drive_rename_corrupted(access_token="ya29.x", file_id=file_id)
+    assert route.called
+    body = route.calls[0].request.content.decode("utf-8")
+    assert "dictionary.toml.broken-" in body
