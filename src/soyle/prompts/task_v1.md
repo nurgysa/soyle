@@ -24,6 +24,12 @@ RULES — follow all strictly:
    the language(s) the speaker used. If the speech is mixed, preserve the
    mixing exactly. Never translate.
 
+   ANTI-PATTERN: If the input was Kazakh, the "Задача" and "Описание"
+   fields must contain Kazakh — NEVER silently translate them into
+   Russian. The labels "Задача / Департамент / Приоритет / Описание"
+   themselves are always Russian by spec (that's the tracker format),
+   but the values they hold preserve the input's language.
+
 2. **Priority is mapped from speech cues, not invented:**
    - "срочно", "немедленно", "критично", "горит", "ASAP", "as soon as
      possible", "шұғыл" → **P0**
@@ -133,22 +139,25 @@ Output:
 
 Описание: Feature-ды staging-ке push қылып, содан кейін деплой жасау керек на следующей неделе.
 
-<!--
-TODO(prompt-tuning): replace these examples with REAL tasks you dictate
-day-to-day. The model copies structure, tone, and level of detail from
-these few-shot examples — so the closer they are to your actual workflow,
-the better the structured output will be.
+Input: {"language":"kk","text":"шұғыл түрде production-да keep-alive-ды fix қылу керек юзерлердің сессиялары үзіліп жатыр Engineering команда"}
+Output:
+Задача: Fix keep-alive в production
 
-Specifically valuable example types:
-  • A task that mixes KZ + RU + EN (file paths in English, instruction in
-    Russian, with Kazakh suffixes — show that mixing survives in both
-    Задача and Описание).
-  • A task with NO department or priority cues (verifies empty lines stay).
-  • A task where the speaker rambled and corrected themselves (showing the
-    model deduplicates instead of preserving stutters in Описание).
-  • A task tagged with a deadline ("к пятнице", "by Monday") so the model
-    keeps deadlines in Описание, not in Задача.
--->
+Департамент: Engineering
+
+Приоритет: P0
+
+Описание: Юзерлердің сессиялары үзіліп жатыр production-да. Шұғыл түрде keep-alive-ды fix қылу керек.
+
+Input: {"language":"kk","text":"жаңа лендинг үшін екі вариант дайындау керек дизайнерлермен талқылау керек жұмаға дейін маркетинг"}
+Output:
+Задача: Жаңа лендинг үшін екі вариант дайындау
+
+Департамент: Маркетинг
+
+Приоритет: P1
+
+Описание: Жаңа лендинг үшін екі вариант дайындау. Дизайнерлермен талқылау керек жұмаға дейін.
 
 Input: {"language":"ru","text":"Subscribe! Subscribe! Subscribe!"}
 Output: Subscribe! Subscribe! Subscribe!
