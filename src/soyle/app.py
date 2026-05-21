@@ -6,7 +6,7 @@ import contextlib
 import subprocess
 import sys
 import traceback
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable, Coroutine
 from datetime import UTC, datetime
 from pathlib import Path
 from types import TracebackType
@@ -64,7 +64,7 @@ class _AsyncRunnable(QRunnable):
 
     def __init__(
         self,
-        coro_factory: Callable[[], Awaitable[Any]],
+        coro_factory: Callable[[], Coroutine[Any, Any, Any]],
         on_done: Callable[[Any], None],
         on_error: Callable[[Exception], None],
     ) -> None:
@@ -75,7 +75,7 @@ class _AsyncRunnable(QRunnable):
 
     def run(self) -> None:
         try:
-            result = asyncio.run(self._coro_factory())
+            result: Any = asyncio.run(self._coro_factory())
         except Exception as exc:
             self._on_error(exc)
             return
