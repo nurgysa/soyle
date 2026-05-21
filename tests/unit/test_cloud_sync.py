@@ -331,6 +331,67 @@ def cloud_sync(tmp_path, mocker):
     )
 
 
+def test_is_configured_true_for_real_client_id(cloud_sync) -> None:
+    """Real-looking client_id (the test fixture's value) → is_configured True."""
+    assert cloud_sync.is_configured is True
+
+
+def test_is_configured_false_for_placeholder(tmp_path, mocker) -> None:
+    """The literal placeholder shipped in app.py → is_configured False.
+
+    Guards against codex P1 on PR #16: with the placeholder, all Google
+    OAuth calls fail with invalid_client. Detect it explicitly so the
+    Settings UI can surface a clear error instead of routing the user
+    to a confused Google consent page.
+    """
+    from soyle.core.config import ConfigStore
+    from soyle.core.dictionary import DictionaryStore
+
+    backing: dict[tuple[str, str], str] = {}
+    mocker.patch(
+        "soyle.core.cloud_sync.keyring.set_password",
+        side_effect=lambda s, u, p: backing.update({(s, u): p}),
+    )
+    mocker.patch(
+        "soyle.core.cloud_sync.keyring.get_password",
+        side_effect=lambda s, u: backing.get((s, u)),
+    )
+    cs = CloudSync(
+        dict_store=DictionaryStore(path=tmp_path / "dict.toml"),
+        config_store=ConfigStore(config_path=tmp_path / "config.toml"),
+        client_id="REPLACE_WITH_REAL_CLIENT_ID.apps.googleusercontent.com",
+    )
+    assert cs.is_configured is False
+
+
+@pytest.mark.asyncio
+async def test_begin_oauth_flow_rejects_placeholder_client_id(
+    tmp_path, mocker,
+) -> None:
+    """begin_oauth_flow must fail-fast with a clear error, not open the
+    browser to a Google page that says 'OAuth client was not found'."""
+    from soyle.core.config import ConfigStore
+    from soyle.core.dictionary import DictionaryStore
+
+    mocker.patch("soyle.core.cloud_sync.webbrowser.open")
+    backing: dict[tuple[str, str], str] = {}
+    mocker.patch(
+        "soyle.core.cloud_sync.keyring.set_password",
+        side_effect=lambda s, u, p: backing.update({(s, u): p}),
+    )
+    mocker.patch(
+        "soyle.core.cloud_sync.keyring.get_password",
+        side_effect=lambda s, u: backing.get((s, u)),
+    )
+    cs = CloudSync(
+        dict_store=DictionaryStore(path=tmp_path / "dict.toml"),
+        config_store=ConfigStore(config_path=tmp_path / "config.toml"),
+        client_id="REPLACE_WITH_REAL_CLIENT_ID.apps.googleusercontent.com",
+    )
+    with pytest.raises(RuntimeError, match="not configured"):
+        await cs.begin_oauth_flow()
+
+
 def test_is_connected_false_when_no_token(cloud_sync) -> None:
     assert cloud_sync.is_connected is False
 

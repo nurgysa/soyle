@@ -194,6 +194,15 @@ class SoyleApp(QObject):
             config_store=self._store,
             client_id=_GOOGLE_CLIENT_ID,
         )
+        if not self._cloud_sync.is_configured:
+            # Dev build: leave a breadcrumb in the log instead of failing
+            # silently. begin_oauth_flow() will raise with a clear message
+            # if the user actually tries to connect.
+            log.warning(
+                "cloud_sync_client_id_not_configured",
+                detail="Replace _GOOGLE_CLIENT_ID in src/soyle/app.py with "
+                       "a real Desktop OAuth Client ID to enable Drive sync.",
+            )
 
         self._target_hwnd = 0
 
