@@ -263,6 +263,7 @@ class _TokenStore:
 # ---- CloudSync coordinator --------------------------------------------------
 
 SYNC_INTERVAL = timedelta(hours=24)
+MAX_SYNC_RETRIES = 3  # cap on 412 (concurrent-write) retries per sync_now()
 
 
 class SyncOutcome(enum.Enum):
@@ -349,7 +350,7 @@ class CloudSync:
 
         return await self._sync_with_token(access)
 
-    async def _sync_with_token(self, access: str) -> SyncResult:
+    async def _sync_with_token(self, access: str, _attempt: int = 0) -> SyncResult:
         # Read remote (and look up file_id for the eventual write).
         try:
             remote, etag = await _drive_get_dictionary(access_token=access)
@@ -386,11 +387,20 @@ class CloudSync:
                     terms=merged,
                 )
             except DriveConcurrentWriteError:
-                _log.info("cloud_sync_concurrent_write_detected")
                 # Idempotent retry — local now has merged terms; the next
                 # round-trip sees latest remote, unions in any new terms,
-                # and writes with a fresh etag.
-                return await self._sync_with_token(access)
+                # and writes with a fresh etag. Bounded so a sustained
+                # multi-device race can't recurse into RecursionError.
+                if _attempt + 1 >= MAX_SYNC_RETRIES:
+                    _log.warning(
+                        "cloud_sync_concurrent_write_max_retries",
+                        attempts=_attempt + 1,
+                    )
+                    return SyncResult(outcome=SyncOutcome.NETWORK)
+                _log.info(
+                    "cloud_sync_concurrent_write_detected", attempt=_attempt + 1,
+                )
+                return await self._sync_with_token(access, _attempt + 1)
             except (httpx.ConnectError, httpx.ReadError, httpx.TimeoutException):
                 _log.warning("cloud_sync_network_error", phase="drive_put")
                 return SyncResult(outcome=SyncOutcome.NETWORK)

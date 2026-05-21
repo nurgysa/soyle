@@ -731,6 +731,45 @@ async def test_sync_now_retries_on_412_concurrent_write(cloud_sync) -> None:
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_sync_now_bounds_412_retries_to_avoid_recursion(cloud_sync) -> None:
+    """Repeated 412s must not recurse without bound — fall back to NETWORK.
+
+    Without a cap, two devices racing on writes can keep producing 412s and
+    push Python past its recursion limit (RecursionError terminates sync
+    instead of returning a controlled outcome). Bounded retry: after
+    MAX_SYNC_RETRIES attempts we surrender silently and the next scheduled
+    cycle retries naturally.
+    """
+    from soyle.core.cloud_sync import MAX_SYNC_RETRIES
+
+    cloud_sync._token_store.save("1//refresh")
+    cloud_sync._dict_store.save(["A"])
+
+    respx.post(OAUTH_TOKEN_URL).mock(
+        return_value=httpx.Response(200, json={"access_token": "ya29.x"})
+    )
+    respx.get(f"{DRIVE_API_BASE}/files").mock(
+        return_value=httpx.Response(200, json={"files": [{"id": "x"}]})
+    )
+    respx.get(f"{DRIVE_API_BASE}/files/x").mock(
+        return_value=httpx.Response(
+            200,
+            content=b'version=1\nterms=["B"]\n',
+            headers={"ETag": '"e1"'},
+        )
+    )
+    patch_route = respx.patch(f"{DRIVE_UPLOAD_BASE}/files/x").mock(
+        return_value=httpx.Response(412, json={"error": "precondition"})
+    )
+
+    result = await cloud_sync.sync_now()
+    assert result.outcome is SyncOutcome.NETWORK
+    # Attempts == MAX (initial + retries up to the cap).
+    assert patch_route.call_count == MAX_SYNC_RETRIES
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_lookup_file_id_excludes_trashed_files(cloud_sync) -> None:
     """Defensive guard: _lookup_file_id must filter trashed too.
 
