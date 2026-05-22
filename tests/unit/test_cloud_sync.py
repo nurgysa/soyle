@@ -1021,3 +1021,54 @@ async def test_disconnect_swallows_revoke_errors(cloud_sync) -> None:
     )
     await cloud_sync.disconnect()  # must not raise
     assert cloud_sync.is_connected is False
+
+
+# ---- Device identity ----
+
+def test_device_id_generated_on_first_call_when_keyring_empty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """First call generates a UUID and persists it to keyring."""
+    from soyle.core import cloud_sync as cs
+
+    stored: dict[tuple[str, str], str] = {}
+    monkeypatch.setattr(
+        cs.keyring, "get_password",
+        lambda service, user: stored.get((service, user)),
+    )
+    monkeypatch.setattr(
+        cs.keyring, "set_password",
+        lambda service, user, pwd: stored.__setitem__((service, user), pwd),
+    )
+
+    result = cs._device_id()
+
+    # Full canonical UUID4 format check (validates all 4 dashes + version byte)
+    import uuid as _uuid
+    assert _uuid.UUID(result).version == 4
+    assert stored == {("Söyle", "device-id"): result}
+
+
+def test_device_id_persisted_across_restarts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Second call returns the same UUID from keyring — no regeneration."""
+    from soyle.core import cloud_sync as cs
+
+    stored: dict[tuple[str, str], str] = {
+        ("Söyle", "device-id"): "11111111-2222-3333-4444-555555555555",
+    }
+    monkeypatch.setattr(
+        cs.keyring, "get_password",
+        lambda service, user: stored.get((service, user)),
+    )
+    set_calls = []
+    monkeypatch.setattr(
+        cs.keyring, "set_password",
+        lambda service, user, pwd: set_calls.append((service, user, pwd)),
+    )
+
+    result = cs._device_id()
+
+    assert result == "11111111-2222-3333-4444-555555555555"
+    assert set_calls == []
