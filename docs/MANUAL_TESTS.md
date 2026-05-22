@@ -54,9 +54,10 @@ Run this checklist before each release. Do NOT release if anything fails.
 ## Code-switching и казахский
 
 Сценарии проверяют, что KZ-распознавание и KZ-сохранение работают
-во всём пайплайне Whisper → LLM. Реальные аудио-фразы — лучше всего;
-если нет, прогоняй текстовые варианты через Settings → LLM (mode = polish)
-с подставленным `info.language` через debug-логирование.
+во всём пайплайне Whisper → LLM. Используйте реальный микрофон —
+audio-первый pipeline единственный способ протестировать Whisper-слой.
+Без аудио можно тестировать только LLM-слой (например, через REPL:
+`asyncio.run(PostProcess(...).polish(text=..., language='kk'))`).
 
 ### A. Pure KZ recognition (Whisper layer)
 
@@ -88,12 +89,15 @@ Run this checklist before each release. Do NOT release if anything fails.
 Прогоните ОДИН и тот же KZ-доминантный input через каждый mode и проверьте,
 что ни один не "нормализует" KZ → RU:
 
-- [ ] Input: "анау мынау бұл функцияда баг бар сонымен fix қылу керек ертеңге дейін"
+Прогоните этот input через каждый из 5 LLM modes по очереди и проверьте output:
+
+> Input: "анау мынау бұл функцияда баг бар сонымен fix қылу керек ертеңге дейін"
+
 - [ ] **polish** → "Бұл функцияда баг бар, fix қылу керек ертеңге дейін." (filler-stripping, KZ stays KZ)
-- [ ] **rewrite** → может реорганизовать, но остаётся KZ
+- [ ] **rewrite** → реорганизация остаётся KZ. Например: "Бұл функцияда баг бар — fix қылу керек ертеңге дейін."
 - [ ] **ai_prompt** → должен превратить в KZ-инструкцию ("Fix қыл мына функцияны…")
 - [ ] **plain_text** → KZ prose, не RU translation
-- [ ] **task** → структурированный output, "Задача" и "Описание" в KZ
+- [ ] **task** → input без priority/department cues, поэтому output может быть неполным; главное — "Задача"/"Описание" остаются KZ, не транслируются в RU.
 
 ### E. Regression: pure-RU остался прежним
 
