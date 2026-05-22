@@ -39,6 +39,7 @@ import keyring
 import keyring.errors
 import structlog
 import tomli_w
+from PySide6.QtCore import QTimer
 
 from soyle.core.config import ConfigStore
 from soyle.core.dictionary import DictionaryStore
@@ -562,6 +563,14 @@ class CloudSync:
         self._token_store = _TokenStore()
         self._oauth_listener: _OAuthCallbackListener | None = None
         self._oauth_verifier: str | None = None
+
+        # Debounced config-push timer. Single-shot semantics: arms on
+        # ConfigStore.save(), restarts the countdown on rapid re-saves,
+        # fires _push_config_now exactly once after 8s of quiescence.
+        self._config_push_timer = QTimer()
+        self._config_push_timer.setSingleShot(True)
+        self._config_push_timer.setInterval(8000)
+        self._config_push_timer.timeout.connect(self._on_config_push_timer)
 
     # -- State predicates -----------------------------------------------------
 
@@ -1129,6 +1138,64 @@ class CloudSync:
         except httpx.HTTPStatusError as exc:
             return self._classify_drive_error(exc, phase="usage_put")
         return SyncResult(outcome=SyncOutcome.OK)
+
+    # -- Debounced push -------------------------------------------------------
+
+    def schedule_config_push(self) -> None:
+        """Restart the 8-second debounce timer. Called from
+        ConfigStore.save() via the push-hook slot wired in app.py.
+
+        Safe to call from any thread that holds a QApplication — Qt
+        marshals QTimer.start() to the main thread automatically when
+        invoked from a slot context; here we're invoked synchronously
+        from ConfigStore.save() which happens on the Qt main thread.
+        """
+        self._config_push_timer.start()
+
+    def _on_config_push_timer(self) -> None:
+        """QTimer fire callback. Dispatches the async push via the
+        existing AsyncRunnable adapter so we don't block the Qt main
+        thread on Drive REST."""
+        from PySide6.QtCore import QThreadPool
+
+        from soyle.ui.async_runnable import AsyncRunnable
+
+        runner = AsyncRunnable(
+            coro_factory=lambda: self._push_config_now(),
+            on_done=lambda _result: None,
+            on_error=lambda _exc: _log.warning(
+                "cloud_sync_debounced_push_error",
+                exc_type=type(_exc).__name__,
+            ),
+        )
+        QThreadPool.globalInstance().start(runner)
+
+    async def _push_config_now(self) -> None:
+        """Run a single config sync round-trip. Silent if not connected."""
+        refresh_token = self._token_store.load()
+        if refresh_token is None:
+            return
+
+        try:
+            access = await _refresh_access_token(
+                client_id=self._client_id, refresh_token=refresh_token,
+            )
+        except OAuthAuthRevokedError:
+            self._token_store.clear()
+            _log.warning("cloud_sync_auth_revoked_during_debounced_push")
+            return
+        except (
+            httpx.ConnectError, httpx.ReadError,
+            httpx.TimeoutException, httpx.HTTPStatusError,
+        ):
+            _log.warning("cloud_sync_network_error_during_debounced_push")
+            return
+
+        result = await self._sync_config(access_token=access)
+        if result.outcome == SyncOutcome.OK:
+            cfg = self._config_store.load()
+            cfg.cloud_sync.last_synced_at = datetime.now(UTC)
+            self._config_store.save(cfg)
 
     @staticmethod
     def _classify_drive_error(
