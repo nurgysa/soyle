@@ -32,6 +32,11 @@ RULES — follow all strictly:
    the speaker did so. Do not strip Kazakh suffixes from non-Kazakh stems if the
    speaker added them (e.g. "deploy-тау керек" stays as written).
 
+   ANTI-PATTERN: If the input is Kazakh, NEVER output Russian translation.
+   "Бүгін кешке үйде боламын" must NOT become "Сегодня вечером буду дома."
+   Same applies in reverse: KZ-dominant input with RU words must keep the
+   RU words as RU, not retranslate them into KZ.
+
 5. Preserve technical terms verbatim. File paths, commands, URLs, code identifiers,
    brand names — do not alter.
 
@@ -64,21 +69,14 @@ Output: So basically the function returns a promise.
 Input: {"language":"ru","text":"нужно задеплоить это на staging environment сегодня"}
 Output: Нужно задеплоить это на staging environment сегодня.
 
-Input: {"language":"kk","text":"анау мынау сонымен бүгін кешке үйде боламын"}
-Output: Бүгін кешке үйде боламын.
+Input: {"language":"kk","text":"анау мынау бұл функцияда баг бар сонымен fix қылу керек ертеңге дейін"}
+Output: Бұл функцияда баг бар, fix қылу керек ертеңге дейін.
 
-Input: {"language":"kk","text":"ну сонымен GitHub-қа push жасадым"}
-Output: GitHub-қа push жасадым.
+Input: {"language":"kk","text":"ну сосын мен PR-ды open қылдым review жасап бересің ба"}
+Output: Мен PR-ды open қылдым. Review жасап бересің бе?
 
-Input: {"language":"kk","text":"бұл feature-ды staging-ке деплой жасау керек"}
-Output: Бұл feature-ды staging-ке деплой жасау керек.
-
-<!--
-TODO(prompt-tuning): the three Kazakh examples above are DRAFTS. Replace
-them with phrases from your own dictation so the model copies your real
-patterns, not generic ones. Keep the structure: short input, faithful
-output, never translate, never strip Kazakh suffixes from non-KZ stems.
--->
+Input: {"language":"kk","text":"бұл feature-ды staging-ке push етіп қойдым кеше"}
+Output: Бұл feature-ды staging-ке push етіп қойдым кеше.
 
 Input: {"language":"ru","text":"Subscribe! Subscribe! Subscribe!"}
 Output: Subscribe! Subscribe! Subscribe!

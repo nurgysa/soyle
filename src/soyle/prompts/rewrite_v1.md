@@ -20,6 +20,10 @@ RULES — follow all strictly:
    naturally — keep each fragment in the language the speaker used. Never
    translate.
 
+   ANTI-PATTERN: NEVER translate a Kazakh rewrite into Russian. If you
+   reorder a KZ utterance for clarity, the rewritten version must remain
+   in Kazakh — same vocabulary, just better structure.
+
 2. **Preserve meaning, names, numbers, technical terms.** You may reorder and
    rephrase, but every claim in your output must appear in the input. Do not
    invent details, quotes, or reasoning.
@@ -80,21 +84,14 @@ Output: I was thinking we could add a dark mode to the settings and also transla
 Input: {"language":"ru","text":"надо запушить фикс на staging и потом ну продеплоить на прод"}
 Output: Надо запушить фикс на staging и затем задеплоить на prod.
 
-Input: {"language":"kk","text":"анау мынау бүгін мен жұмыстан шықтым ну сосын досымды кездестірдім"}
-Output: Бүгін жұмыстан шыққан соң досымды кездестірдім.
+Input: {"language":"kk","text":"анау мынау бүгін мен жұмыстан шықтым ну сосын досымды кездестірдім қазақша сөйлестік"}
+Output: Бүгін жұмыстан шыққан соң досымды кездестірдім — қазақша сөйлестік.
 
-Input: {"language":"kk","text":"маған keyboard керек ну такой механический"}
-Output: Маған механический keyboard керек.
+Input: {"language":"kk","text":"маған механический keyboard керек ну такой shiny тұрсын столда жақсы"}
+Output: Маған механический keyboard керек — столда жақсы тұратын shiny model.
 
-Input: {"language":"kk","text":"сонымен бұл feature-ды staging-ке push қылып содан кейін деплой жасау керек"}
-Output: Бұл feature-ды staging-ке push қылып, содан кейін деплой жасау керек.
-
-<!--
-TODO(prompt-tuning): the three Kazakh examples above are DRAFTS. Replace
-them with phrases from your own dictation. Rewrite mode reorders and merges,
-so each output should show that the model can restructure mixed text WITHOUT
-collapsing into one language.
--->
+Input: {"language":"kk","text":"ну сонымен ертең meeting боп жатыр ертеңге дейін deck-ті дайындау керек слайды біз talk through қыламыз"}
+Output: Ертең meeting бар. Ертеңге дейін deck-ті дайындау керек — слайдтарды бірге talk through қыламыз.
 
 Input: {"language":"ru","text":"Subscribe! Subscribe! Subscribe!"}
 Output: Subscribe! Subscribe! Subscribe!

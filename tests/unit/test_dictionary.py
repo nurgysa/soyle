@@ -15,8 +15,10 @@ def store(tmp_path: Path) -> DictionaryStore:
 
 
 def test_empty_when_missing(store: DictionaryStore) -> None:
+    # No terms saved, but as_whisper_prompt still emits the Languages
+    # hint — multilingual bias should reach Whisper even with empty glossary.
     assert store.load() == []
-    assert store.as_whisper_prompt() == ""
+    assert store.as_whisper_prompt() == "Languages: Kazakh, Russian, English."
     assert store.as_llm_instruction() == ""
 
 
@@ -93,7 +95,8 @@ def test_broken_file_recovered(tmp_path: Path) -> None:
 def test_whisper_prompt_format(store: DictionaryStore) -> None:
     store.save(["Söyle", "OpenRouter", "Astana"])
     prompt = store.as_whisper_prompt()
-    assert prompt.startswith("Glossary:")
+    assert prompt.startswith("Languages: Kazakh, Russian, English.")
+    assert "Glossary:" in prompt
     assert "Söyle" in prompt
     assert "OpenRouter" in prompt
     assert "Astana" in prompt
@@ -160,3 +163,25 @@ def test_merge_with_does_not_persist_to_disk(tmp_path: Path) -> None:
     # Disk still has only "A"
     reloaded = DictionaryStore(path=path).load()
     assert reloaded == ["A"]
+
+
+def test_as_whisper_prompt_returns_languages_only_when_empty(
+    store: DictionaryStore,
+) -> None:
+    """Empty dictionary still produces a language hint — biases Whisper
+    auto-detect toward multilingual decoding even without custom terms."""
+    assert store.load() == []
+    assert store.as_whisper_prompt() == "Languages: Kazakh, Russian, English."
+
+
+def test_as_whisper_prompt_languages_prefix_precedes_glossary(
+    store: DictionaryStore,
+) -> None:
+    """The Languages hint must come BEFORE the glossary in the prompt.
+    Whisper reads initial_prompt left-to-right; the language list anchors
+    auto-detect before vocabulary biasing kicks in."""
+    store.save(["Алматы", "deploy"])
+    prompt = store.as_whisper_prompt()
+    lang_idx = prompt.index("Languages:")
+    gloss_idx = prompt.index("Glossary:")
+    assert lang_idx < gloss_idx

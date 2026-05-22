@@ -51,6 +51,67 @@ Run this checklist before each release. Do NOT release if anything fails.
 - [ ] Enable autostart → reboot → app starts with Windows
 - [ ] Disable autostart → reboot → app does not autostart
 
+## Code-switching и казахский
+
+Сценарии проверяют, что KZ-распознавание и KZ-сохранение работают
+во всём пайплайне Whisper → LLM. Используйте реальный микрофон —
+audio-первый pipeline единственный способ протестировать Whisper-слой.
+Без аудио можно тестировать только LLM-слой (например, через REPL:
+`asyncio.run(PostProcess(...).polish(text=..., language='kk'))`).
+
+### A. Pure KZ recognition (Whisper layer)
+
+- [ ] Произнесите: "Бүгін кешке үйде боламын".
+      Распознать должен: букву **Қ/Ң/Ө/Ү/Ұ/Һ/І** не теряя; никаких подстановок RU-фонетики.
+- [ ] Произнесите: "Қазақстанда қаншама уақыт өмір сүрдің?"
+      Должен сохранить вопросительную интонацию + KZ-буквы.
+- [ ] Произнесите: "Алматыдан Астанаға поездбен жүрдім."
+      Должен сохранить KZ-падежи (-дан ablative, -ға dative).
+
+### B. KZ + English code-switching
+
+- [ ] Произнесите: "Бұл feature-ды staging-ке push етеміз."
+      Должен сохранить английские слова латиницей + KZ-суффиксы (-ды accusative, -ке dative).
+- [ ] Произнесите: "Pull request жасадым, code review керек."
+      Должен сохранить EN-имена существительные + KZ-глаголы.
+- [ ] Произнесите: "GitHub-қа commit-ті push етіп жатырмын."
+      Множественные EN-сущ + KZ-глаголы.
+
+### C. KZ + Russian code-switching
+
+- [ ] Произнесите: "Документке тапсырманы жазып қойдым."
+      Должен сохранить RU-stem "документ" + KZ-падеж (-ке dative), не транскрибировать в KZ-фонетику.
+- [ ] Произнесите: "Сосын совещаниеге барамын."
+      RU-сущ "совещание" + KZ-падеж (-ге dative).
+
+### D. LLM polish сохраняет KZ во всех 5 modes
+
+Прогоните ОДИН и тот же KZ-доминантный input через каждый mode и проверьте,
+что ни один не "нормализует" KZ → RU:
+
+Прогоните этот input через каждый из 5 LLM modes по очереди и проверьте output:
+
+> Input: "анау мынау бұл функцияда баг бар сонымен fix қылу керек ертеңге дейін"
+
+- [ ] **polish** → "Бұл функцияда баг бар, fix қылу керек ертеңге дейін." (filler-stripping, KZ stays KZ)
+- [ ] **rewrite** → реорганизация остаётся KZ. Например: "Бұл функцияда баг бар — fix қылу керек ертеңге дейін."
+- [ ] **ai_prompt** → должен превратить в KZ-инструкцию ("Fix қыл мына функцияны…")
+- [ ] **plain_text** → KZ prose, не RU translation
+- [ ] **task** → input без priority/department cues, поэтому output может быть неполным; главное — "Задача"/"Описание" остаются KZ, не транслируются в RU.
+
+### E. Regression: pure-RU остался прежним
+
+- [ ] Произнесите старую тестовую фразу: "Привет это тестовая фраза"
+      Распознавание и polish должны быть так же хороши, как до изменений.
+      (Это страховка от R1 — добавление KZ в initial_prompt не должно ухудшать pure-RU recognition.)
+
+### F. Regression: pure-EN остался прежним
+
+- [ ] Произнесите: "Hello world how are you doing today"
+      Pure-EN recognition + polish без регрессий.
+      (Если этот чек проседает — initial_prompt смещает auto-detect, нужно откатить
+      `as_whisper_prompt()` к старому формату или поменять порядок Languages-списка.)
+
 ## Cloud Sync (Phase 1)
 
 These checks supplement `tests/unit/test_cloud_sync.py` (≥50 unit tests).
