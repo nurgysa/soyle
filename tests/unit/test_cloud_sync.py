@@ -2289,3 +2289,122 @@ async def test_sync_config_schema_mismatch_skipped_silently_preserves_remote(
     assert result.outcome.name == "OK"
     assert not rename.called
     assert not create.called
+
+
+# ---- Task 12: _sync_usage orchestration ----
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_sync_usage_uploads_to_empty_remote(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cs = _make_cloud_sync(tmp_path, monkeypatch)
+    cs._usage_tracker.record(0.05)
+
+    respx.get(f"{_DRIVE_API_BASE}/files").mock(
+        return_value=httpx.Response(200, json={"files": []}),
+    )
+    create = respx.post(f"{_DRIVE_UPLOAD_BASE}/files").mock(
+        return_value=httpx.Response(200, json={"id": "U1"}),
+    )
+
+    result = await cs._sync_usage(access_token="tok")
+    assert result.outcome.name == "OK"
+    assert create.called
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_sync_usage_picks_up_remote_device_entries(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Remote has dev-B's bucket → after sync, local sees both A and B."""
+    import json as _json
+    cs = _make_cloud_sync(tmp_path, monkeypatch)
+    cs._usage_tracker.record(0.05)
+
+    today_key = datetime.now(UTC).strftime("%Y-%m-%d")
+    remote_body = _json.dumps({
+        today_key: {"dev-B": {"cost_usd": 0.07, "requests": 3}},
+    }).encode("utf-8")
+
+    respx.get(f"{_DRIVE_API_BASE}/files").mock(
+        return_value=httpx.Response(200, json={
+            "files": [{"id": "U1", "name": "usage.json", "modifiedTime": "2026-05-22T10:00:00.000Z"}],
+        }),
+    )
+    respx.get(f"{_DRIVE_API_BASE}/files/U1").mock(
+        return_value=httpx.Response(
+            200, content=remote_body, headers={"ETag": "u-old"},
+        ),
+    )
+    push = respx.patch(f"{_DRIVE_UPLOAD_BASE}/files/U1").mock(
+        return_value=httpx.Response(
+            200, json={"id": "U1"}, headers={"ETag": "u-new"},
+        ),
+    )
+
+    result = await cs._sync_usage(access_token="tok")
+    assert result.outcome.name == "OK"
+    assert push.called
+    cost, reqs = cs._usage_tracker.today()
+    assert cost == pytest.approx(0.12)
+    assert reqs == 4
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_sync_usage_noop_when_local_matches_remote(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Local == remote → no PUT issued."""
+    import json as _json
+    cs = _make_cloud_sync(tmp_path, monkeypatch)
+    cs._usage_tracker.record(0.05)
+    snapshot = cs._usage_tracker.serialize_for_sync()
+    body = _json.dumps(snapshot, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+
+    respx.get(f"{_DRIVE_API_BASE}/files").mock(
+        return_value=httpx.Response(200, json={
+            "files": [{"id": "U1", "name": "usage.json", "modifiedTime": "2026-05-22T10:00:00.000Z"}],
+        }),
+    )
+    respx.get(f"{_DRIVE_API_BASE}/files/U1").mock(
+        return_value=httpx.Response(200, content=body, headers={"ETag": "u"}),
+    )
+    patch_route = respx.patch(f"{_DRIVE_UPLOAD_BASE}/files/U1").mock(
+        return_value=httpx.Response(200, json={"id": "U1"}),
+    )
+
+    result = await cs._sync_usage(access_token="tok")
+    assert result.outcome.name == "OK"
+    assert not patch_route.called
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_sync_usage_corrupted_remote_renames_and_pushes_local(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cs = _make_cloud_sync(tmp_path, monkeypatch)
+    cs._usage_tracker.record(0.05)
+
+    respx.get(f"{_DRIVE_API_BASE}/files").mock(
+        return_value=httpx.Response(200, json={
+            "files": [{"id": "U1", "name": "usage.json", "modifiedTime": "2026-05-22T10:00:00.000Z"}],
+        }),
+    )
+    respx.get(f"{_DRIVE_API_BASE}/files/U1").mock(
+        return_value=httpx.Response(200, content=b"not json {{{ @@@"),
+    )
+    rename = respx.patch(f"{_DRIVE_API_BASE}/files/U1").mock(
+        return_value=httpx.Response(200, json={"id": "U1"}),
+    )
+    create = respx.post(f"{_DRIVE_UPLOAD_BASE}/files").mock(
+        return_value=httpx.Response(200, json={"id": "U2"}),
+    )
+
+    result = await cs._sync_usage(access_token="tok")
+    assert result.outcome.name == "OK"
+    assert rename.called
+    assert create.called

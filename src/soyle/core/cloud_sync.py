@@ -27,7 +27,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from http.server import BaseHTTPRequestHandler
 from queue import Empty, Queue
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 from urllib.parse import parse_qs, urlencode, urlparse
 
 if TYPE_CHECKING:
@@ -942,6 +942,83 @@ class CloudSync:
             return SyncResult(outcome=SyncOutcome.NETWORK)
         except httpx.HTTPStatusError as exc:
             return self._classify_drive_error(exc, phase="config_put")
+        return SyncResult(outcome=SyncOutcome.OK)
+
+    async def _sync_usage(self, access_token: str) -> SyncResult:
+        """Pure-additive round-trip for usage.json — see spec §6.3."""
+        # serialize_for_sync returns _V2State (dict[str, dict[str, dict[str, float]]]);
+        # cast to the looser signature _merge_usage expects.
+        local_usage = cast(
+            "dict[str, dict[str, object]]",
+            self._usage_tracker.serialize_for_sync(),
+        )
+
+        try:
+            remote_raw, remote_meta = await _drive_get_usage(
+                access_token=access_token,
+            )
+        except DriveCorruptedError as corrupted:
+            _log.warning(
+                "cloud_sync_usage_corrupted_remote",
+                file_id=corrupted.file_id,
+            )
+            await _drive_rename_corrupted(
+                access_token=access_token, file_id=corrupted.file_id,
+            )
+            remote_raw, remote_meta = {}, None
+        except (
+            httpx.ConnectError, httpx.ReadError, httpx.TimeoutException,
+        ):
+            _log.warning("cloud_sync_network_error", phase="usage_get")
+            return SyncResult(outcome=SyncOutcome.NETWORK)
+        except httpx.HTTPStatusError as exc:
+            return self._classify_drive_error(exc, phase="usage_get")
+
+        # _drive_get_usage returns dict[str, object]; narrow to the shape
+        # _merge_usage expects so the merge can iterate per-date buckets.
+        remote_usage = cast("dict[str, dict[str, object]]", remote_raw)
+        merged = _merge_usage(local_usage, remote_usage)
+
+        if merged != local_usage:
+            from soyle.core.usage import _V2State as _UsageV2State
+            self._usage_tracker.apply_merged(cast(_UsageV2State, merged))
+
+        if merged != remote_usage:
+            return await self._push_usage(
+                access_token=access_token,
+                file_id=remote_meta.file_id if remote_meta else None,
+                etag=remote_meta.etag if remote_meta else None,
+                merged=merged,
+            )
+        return SyncResult(outcome=SyncOutcome.OK)
+
+    async def _push_usage(
+        self,
+        *,
+        access_token: str,
+        file_id: str | None,
+        etag: str | None,
+        merged: dict[str, dict[str, object]],
+    ) -> SyncResult:
+        try:
+            await _drive_put_usage(
+                access_token=access_token,
+                file_id=file_id,
+                etag=etag,
+                # _drive_put_usage takes dict[str, object]; merged is a subtype
+                # but mypy's dict invariance requires an explicit cast.
+                usage_data=cast("dict[str, object]", merged),
+            )
+        except DriveConcurrentWriteError:
+            _log.info("cloud_sync_concurrent_write_usage_retrying")
+            return await self._sync_usage(access_token=access_token)
+        except (
+            httpx.ConnectError, httpx.ReadError, httpx.TimeoutException,
+        ):
+            _log.warning("cloud_sync_network_error", phase="usage_put")
+            return SyncResult(outcome=SyncOutcome.NETWORK)
+        except httpx.HTTPStatusError as exc:
+            return self._classify_drive_error(exc, phase="usage_put")
         return SyncResult(outcome=SyncOutcome.OK)
 
     @staticmethod
