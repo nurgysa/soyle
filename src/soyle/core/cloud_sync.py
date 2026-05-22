@@ -32,6 +32,7 @@ from urllib.parse import parse_qs, urlencode, urlparse
 
 if TYPE_CHECKING:
     from soyle.core.config import Config
+    from soyle.core.usage import UsageTracker
 
 import httpx
 import keyring
@@ -476,6 +477,11 @@ def _merge_usage(
 SYNC_INTERVAL = timedelta(hours=24)
 MAX_SYNC_RETRIES = 3  # cap on 412 (concurrent-write) retries per sync_now()
 
+# Clock-skew tolerance for mtime comparisons (seconds). Within this window
+# we treat local and remote as already in sync — prevents push/pull
+# ping-pong when two devices have slightly drifting clocks.
+_MTIME_SKEW_SECONDS = 5
+
 # Marker substring shipped in app.py's _GOOGLE_CLIENT_ID before a real GCP
 # Desktop OAuth Client ID is plugged in. Used by is_configured for fail-fast
 # guarding (codex P1 follow-up on PR #16) — without this, begin_oauth_flow
@@ -527,10 +533,12 @@ class CloudSync:
         *,
         dict_store: DictionaryStore,
         config_store: ConfigStore,
+        usage_tracker: UsageTracker,
         client_id: str,
     ) -> None:
         self._dict_store = dict_store
         self._config_store = config_store
+        self._usage_tracker = usage_tracker
         self._client_id = client_id
         self._token_store = _TokenStore()
         self._oauth_listener: _OAuthCallbackListener | None = None
@@ -844,6 +852,97 @@ class CloudSync:
             return None
         file_id: str = files[0]["id"]
         return file_id
+
+    async def _sync_config(self, access_token: str) -> SyncResult:
+        """Single round-trip for config.toml — pulls or pushes by mtime."""
+        local_cfg = self._config_store.load()
+        try:
+            local_mtime = self._config_store.mtime()
+        except FileNotFoundError:
+            local_mtime = datetime.now(UTC)
+
+        try:
+            remote_cfg, remote_meta = await _drive_get_config(
+                access_token=access_token,
+            )
+        except DriveCorruptedError as corrupted:
+            _log.warning(
+                "cloud_sync_config_corrupted_remote",
+                file_id=corrupted.file_id,
+                exc_type=type(corrupted.original).__name__,
+            )
+            from pydantic import ValidationError
+            if isinstance(corrupted.original, ValidationError):
+                _log.warning(
+                    "cloud_sync_config_schema_mismatch",
+                    file_id=corrupted.file_id,
+                )
+                return SyncResult(outcome=SyncOutcome.OK)
+            await _drive_rename_corrupted(
+                access_token=access_token, file_id=corrupted.file_id,
+            )
+            remote_cfg, remote_meta = None, None
+        except (
+            httpx.ConnectError, httpx.ReadError, httpx.TimeoutException,
+        ):
+            _log.warning("cloud_sync_network_error", phase="config_get")
+            return SyncResult(outcome=SyncOutcome.NETWORK)
+        except httpx.HTTPStatusError as exc:
+            return self._classify_drive_error(exc, phase="config_get")
+
+        if remote_cfg is None:
+            return await self._push_config(
+                access_token=access_token,
+                file_id=None,
+                etag=None,
+                local_cfg=local_cfg,
+            )
+
+        assert remote_meta is not None
+        skew = timedelta(seconds=_MTIME_SKEW_SECONDS)
+        if remote_meta.modified_time > local_mtime + skew:
+            merged = _merge_config(
+                local_cfg, remote_cfg, local_mtime, remote_meta.modified_time,
+            )
+            self._config_store.apply_synced_overrides(merged)
+            return SyncResult(outcome=SyncOutcome.OK)
+        elif local_mtime > remote_meta.modified_time + skew:
+            return await self._push_config(
+                access_token=access_token,
+                file_id=remote_meta.file_id,
+                etag=remote_meta.etag,
+                local_cfg=local_cfg,
+            )
+        else:
+            return SyncResult(outcome=SyncOutcome.OK)
+
+    async def _push_config(
+        self,
+        *,
+        access_token: str,
+        file_id: str | None,
+        etag: str | None,
+        local_cfg: Config,
+    ) -> SyncResult:
+        """Wrap _drive_put_config with standard error classification."""
+        try:
+            await _drive_put_config(
+                access_token=access_token,
+                file_id=file_id,
+                etag=etag,
+                stripped_config=_strip_deny(local_cfg),
+            )
+        except DriveConcurrentWriteError:
+            _log.info("cloud_sync_concurrent_write_config_retrying")
+            return await self._sync_config(access_token=access_token)
+        except (
+            httpx.ConnectError, httpx.ReadError, httpx.TimeoutException,
+        ):
+            _log.warning("cloud_sync_network_error", phase="config_put")
+            return SyncResult(outcome=SyncOutcome.NETWORK)
+        except httpx.HTTPStatusError as exc:
+            return self._classify_drive_error(exc, phase="config_put")
+        return SyncResult(outcome=SyncOutcome.OK)
 
     @staticmethod
     def _classify_drive_error(

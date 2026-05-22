@@ -6,6 +6,7 @@ import hashlib
 import threading
 import uuid as _uuid
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from urllib.parse import urlencode
 from urllib.request import urlopen
 
@@ -312,6 +313,7 @@ def cloud_sync(tmp_path, mocker):
     """A CloudSync wired to in-memory keyring and a tmp config/dict store."""
     from soyle.core.config import ConfigStore
     from soyle.core.dictionary import DictionaryStore
+    from soyle.core.usage import UsageTracker
 
     backing: dict[tuple[str, str], str] = {}
     mocker.patch(
@@ -329,9 +331,11 @@ def cloud_sync(tmp_path, mocker):
 
     cfg_store = ConfigStore(config_path=tmp_path / "config.toml")
     dict_store = DictionaryStore(path=tmp_path / "dict.toml")
+    usage_tracker = UsageTracker(tmp_path / "usage.json")
     return CloudSync(
         dict_store=dict_store,
         config_store=cfg_store,
+        usage_tracker=usage_tracker,
         client_id="test-client-id.apps.googleusercontent.com",
     )
 
@@ -351,6 +355,7 @@ def test_is_configured_false_for_placeholder(tmp_path, mocker) -> None:
     """
     from soyle.core.config import ConfigStore
     from soyle.core.dictionary import DictionaryStore
+    from soyle.core.usage import UsageTracker
 
     backing: dict[tuple[str, str], str] = {}
     mocker.patch(
@@ -364,6 +369,7 @@ def test_is_configured_false_for_placeholder(tmp_path, mocker) -> None:
     cs = CloudSync(
         dict_store=DictionaryStore(path=tmp_path / "dict.toml"),
         config_store=ConfigStore(config_path=tmp_path / "config.toml"),
+        usage_tracker=UsageTracker(tmp_path / "usage.json"),
         client_id="REPLACE_WITH_REAL_CLIENT_ID.apps.googleusercontent.com",
     )
     assert cs.is_configured is False
@@ -377,6 +383,7 @@ async def test_begin_oauth_flow_rejects_placeholder_client_id(
     browser to a Google page that says 'OAuth client was not found'."""
     from soyle.core.config import ConfigStore
     from soyle.core.dictionary import DictionaryStore
+    from soyle.core.usage import UsageTracker
 
     mocker.patch("soyle.core.cloud_sync.webbrowser.open")
     backing: dict[tuple[str, str], str] = {}
@@ -391,6 +398,7 @@ async def test_begin_oauth_flow_rejects_placeholder_client_id(
     cs = CloudSync(
         dict_store=DictionaryStore(path=tmp_path / "dict.toml"),
         config_store=ConfigStore(config_path=tmp_path / "config.toml"),
+        usage_tracker=UsageTracker(tmp_path / "usage.json"),
         client_id="REPLACE_WITH_REAL_CLIENT_ID.apps.googleusercontent.com",
     )
     with pytest.raises(RuntimeError, match="not configured"):
@@ -2066,3 +2074,218 @@ async def test_drive_put_usage_updates_existing_with_if_match() -> None:
     assert update.called
     assert update.calls.last.request.headers["If-Match"] == "old"
     assert meta.etag == "new"
+
+
+# ---- Task 11: _sync_config orchestration ----
+
+# Tolerance constant from spec — keep in sync with cloud_sync.py
+_MTIME_SKEW_SECONDS = 5
+
+
+def _stub_device_id(monkeypatch: pytest.MonkeyPatch, device: str) -> None:
+    from soyle.core import usage as u
+    monkeypatch.setattr(u, "_device_id", lambda: device)
+
+
+def _make_cloud_sync(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+):
+    """Construct a CloudSync with isolated config + dict + usage stores
+    rooted in tmp_path. Doesn't connect (no refresh token in keyring)."""
+    from soyle.core.cloud_sync import CloudSync
+    from soyle.core.config import ConfigStore
+    from soyle.core.dictionary import DictionaryStore
+    from soyle.core.usage import UsageTracker
+
+    _stub_device_id(monkeypatch, "dev-A")
+    config_store = ConfigStore(config_path=tmp_path / "config.toml")
+    dict_store = DictionaryStore(path=tmp_path / "dictionary.toml")
+    usage_tracker = UsageTracker(tmp_path / "usage.json")
+    return CloudSync(
+        dict_store=dict_store,
+        config_store=config_store,
+        usage_tracker=usage_tracker,
+        client_id="test-client-id.apps.googleusercontent.com",
+    )
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_sync_config_uploads_when_remote_404(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """First device: no remote config → upload local (deny-stripped)."""
+    cs = _make_cloud_sync(tmp_path, monkeypatch)
+    cs._config_store.load()
+
+    list_route = respx.get(f"{_DRIVE_API_BASE}/files").mock(
+        return_value=httpx.Response(200, json={"files": []}),
+    )
+    create_route = respx.post(f"{_DRIVE_UPLOAD_BASE}/files").mock(
+        return_value=httpx.Response(200, json={"id": "NEW"}),
+    )
+
+    result = await cs._sync_config(access_token="tok")
+    assert result.outcome.name == "OK"
+    assert list_route.called
+    assert create_route.called
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_sync_config_pulls_when_remote_mtime_newer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cs = _make_cloud_sync(tmp_path, monkeypatch)
+    local = cs._config_store.load()
+    assert local.hotkey.combination == "right alt"
+
+    future = datetime.now(UTC).replace(microsecond=0) + timedelta(hours=1)
+    iso = future.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    remote_body = b"version = 1\n\n[hotkey]\ncombination = \"ctrl+shift\"\n"
+
+    respx.get(f"{_DRIVE_API_BASE}/files").mock(
+        return_value=httpx.Response(200, json={
+            "files": [{"id": "F1", "name": "config.toml", "modifiedTime": iso}],
+        }),
+    )
+    respx.get(f"{_DRIVE_API_BASE}/files/F1").mock(
+        return_value=httpx.Response(200, content=remote_body, headers={"ETag": "e1"}),
+    )
+
+    result = await cs._sync_config(access_token="tok")
+    assert result.outcome.name == "OK"
+
+    reloaded = cs._config_store.load()
+    assert reloaded.hotkey.combination == "ctrl+shift"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_sync_config_pushes_when_local_mtime_newer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cs = _make_cloud_sync(tmp_path, monkeypatch)
+    local = cs._config_store.load()
+    local.hotkey.combination = "ctrl+shift"
+    cs._config_store.save(local)  # bumps local mtime to now()
+
+    past = datetime.now(UTC).replace(microsecond=0) - timedelta(hours=1)
+    iso = past.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    remote_body = b"version = 1\n\n[hotkey]\ncombination = \"alt\"\n"
+
+    respx.get(f"{_DRIVE_API_BASE}/files").mock(
+        return_value=httpx.Response(200, json={
+            "files": [{"id": "F1", "name": "config.toml", "modifiedTime": iso}],
+        }),
+    )
+    respx.get(f"{_DRIVE_API_BASE}/files/F1").mock(
+        return_value=httpx.Response(
+            200, content=remote_body, headers={"ETag": "e-old"},
+        ),
+    )
+    push = respx.patch(f"{_DRIVE_UPLOAD_BASE}/files/F1").mock(
+        return_value=httpx.Response(
+            200, json={"id": "F1"}, headers={"ETag": "e-new"},
+        ),
+    )
+
+    result = await cs._sync_config(access_token="tok")
+    assert result.outcome.name == "OK"
+    assert push.called
+    assert push.calls.last.request.headers["If-Match"] == "e-old"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_sync_config_noop_when_mtimes_within_tolerance(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Within ±5s → no PATCH, no POST issued."""
+    cs = _make_cloud_sync(tmp_path, monkeypatch)
+    cs._config_store.load()
+    local_mtime = cs._config_store.mtime()
+
+    iso = local_mtime.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    remote_body = b"version = 1\n"
+
+    respx.get(f"{_DRIVE_API_BASE}/files").mock(
+        return_value=httpx.Response(200, json={
+            "files": [{"id": "F1", "name": "config.toml", "modifiedTime": iso}],
+        }),
+    )
+    respx.get(f"{_DRIVE_API_BASE}/files/F1").mock(
+        return_value=httpx.Response(
+            200, content=remote_body, headers={"ETag": "e"},
+        ),
+    )
+    patch_route = respx.patch(f"{_DRIVE_UPLOAD_BASE}/files/F1").mock(
+        return_value=httpx.Response(200, json={"id": "F1"}),
+    )
+
+    result = await cs._sync_config(access_token="tok")
+    assert result.outcome.name == "OK"
+    assert not patch_route.called
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_sync_config_corrupted_remote_renames_and_pushes_local(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Broken TOML on Drive → rename to .broken-<ts> + push local."""
+    cs = _make_cloud_sync(tmp_path, monkeypatch)
+    cs._config_store.load()
+
+    respx.get(f"{_DRIVE_API_BASE}/files").mock(
+        return_value=httpx.Response(200, json={
+            "files": [{"id": "F1", "name": "config.toml", "modifiedTime": "2026-05-22T10:00:00.000Z"}],
+        }),
+    )
+    respx.get(f"{_DRIVE_API_BASE}/files/F1").mock(
+        return_value=httpx.Response(200, content=b"@@@ not valid toml @@@"),
+    )
+    rename = respx.patch(f"{_DRIVE_API_BASE}/files/F1").mock(
+        return_value=httpx.Response(200, json={"id": "F1"}),
+    )
+    create = respx.post(f"{_DRIVE_UPLOAD_BASE}/files").mock(
+        return_value=httpx.Response(200, json={"id": "F2"}),
+    )
+
+    result = await cs._sync_config(access_token="tok")
+    assert result.outcome.name == "OK"
+    assert rename.called
+    assert create.called
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_sync_config_schema_mismatch_skipped_silently_preserves_remote(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Remote has unknown field (newer Söyle): skip the sync, leave both
+    sides intact, do NOT rename, do NOT push."""
+    cs = _make_cloud_sync(tmp_path, monkeypatch)
+    cs._config_store.load()
+
+    # Field unknown to this Söyle's Config — extra="forbid" → ValidationError
+    remote_body = b'version = 1\n\n[hotkey]\nfuture_field = "from-newer-Soyle"\n'
+    respx.get(f"{_DRIVE_API_BASE}/files").mock(
+        return_value=httpx.Response(200, json={
+            "files": [{"id": "F1", "name": "config.toml", "modifiedTime": "2026-05-22T10:00:00.000Z"}],
+        }),
+    )
+    respx.get(f"{_DRIVE_API_BASE}/files/F1").mock(
+        return_value=httpx.Response(200, content=remote_body),
+    )
+    rename = respx.patch(f"{_DRIVE_API_BASE}/files/F1").mock(
+        return_value=httpx.Response(200, json={"id": "F1"}),
+    )
+    create = respx.post(f"{_DRIVE_UPLOAD_BASE}/files").mock(
+        return_value=httpx.Response(200, json={"id": "F2"}),
+    )
+
+    result = await cs._sync_config(access_token="tok")
+    assert result.outcome.name == "OK"
+    assert not rename.called
+    assert not create.called

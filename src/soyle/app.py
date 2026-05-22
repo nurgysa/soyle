@@ -164,6 +164,7 @@ class SoyleApp(QObject):
         self._cloud_sync = CloudSync(
             dict_store=self._dict_store,
             config_store=self._store,
+            usage_tracker=self._usage,
             client_id=_GOOGLE_CLIENT_ID,
         )
         if not self._cloud_sync.is_configured:
