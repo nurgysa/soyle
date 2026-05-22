@@ -26,7 +26,11 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from http.server import BaseHTTPRequestHandler
 from queue import Empty, Queue
+from typing import TYPE_CHECKING
 from urllib.parse import parse_qs, urlencode, urlparse
+
+if TYPE_CHECKING:
+    from soyle.core.config import Config
 
 import httpx
 import keyring
@@ -404,6 +408,19 @@ def _del_dotted(data: dict[str, object], path: str) -> None:
             return
         cursor = next_level
     cursor.pop(parts[-1], None)
+
+
+def _strip_deny(config: Config) -> dict[str, object]:
+    """Serialize Config to dict, then remove every deny-list path.
+
+    The returned dict is what gets uploaded to Drive — Drive never sees
+    deny-listed fields at all. Symmetric with _merge_config, which
+    overlays local's deny-list values back onto whatever winner produced.
+    """
+    raw = config.model_dump(mode="json", exclude_none=True)
+    for path in _CONFIG_DENY_LIST:
+        _del_dotted(raw, path)
+    return raw
 
 
 # ---- CloudSync coordinator --------------------------------------------------

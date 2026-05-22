@@ -1373,3 +1373,75 @@ def test_del_dotted_silent_when_path_missing() -> None:
     data: dict = {"hotkey": {"combination": "alt"}}
     _del_dotted(data, "audio.device")  # should not raise
     assert data == {"hotkey": {"combination": "alt"}}
+
+
+# ---- Task 5: _strip_deny ----
+
+def _make_config_with_overrides(**overrides: object):
+    """Build a Config with selected non-default fields. Returns the Config."""
+    from soyle.core.config import (
+        AudioConfig,
+        BehaviorConfig,
+        CloudSyncConfig,
+        Config,
+        HotkeyConfig,
+        PostProcessConfig,
+        UIConfig,
+        WhisperConfig,
+    )
+    cfg = Config(
+        hotkey=HotkeyConfig(**overrides.get("hotkey", {})),
+        audio=AudioConfig(**overrides.get("audio", {})),
+        whisper=WhisperConfig(**overrides.get("whisper", {})),
+        postprocess=PostProcessConfig(**overrides.get("postprocess", {})),
+        ui=UIConfig(**overrides.get("ui", {})),
+        behavior=BehaviorConfig(**overrides.get("behavior", {})),
+        cloud_sync=CloudSyncConfig(**overrides.get("cloud_sync", {})),
+    )
+    return cfg
+
+
+def test_strip_deny_removes_all_listed_dotted_paths() -> None:
+    from soyle.core.cloud_sync import _strip_deny
+
+    cfg = _make_config_with_overrides(
+        audio={"device": "MyMic"},
+        whisper={"model": "large-v3", "device": "cuda", "compute_type": "float16"},
+        behavior={"autostart": True, "inject_method": "keystroke"},
+        ui={"theme": "light"},
+    )
+    stripped = _strip_deny(cfg)
+
+    assert "version" not in stripped
+    assert "device" not in stripped.get("audio", {})
+    assert "model" not in stripped.get("whisper", {})
+    assert "device" not in stripped.get("whisper", {})
+    assert "compute_type" not in stripped.get("whisper", {})
+    assert "autostart" not in stripped.get("behavior", {})
+    assert "inject_method" not in stripped.get("behavior", {})
+    assert "theme" not in stripped.get("ui", {})
+    assert "cloud_sync" not in stripped
+
+
+def test_strip_deny_preserves_synced_fields() -> None:
+    from soyle.core.cloud_sync import _strip_deny
+
+    cfg = _make_config_with_overrides(
+        hotkey={"combination": "ctrl+shift"},
+        postprocess={"mode": "rewrite", "model": "google/gemini-2.5-flash"},
+        ui={"sound_enabled": False},
+    )
+    stripped = _strip_deny(cfg)
+
+    assert stripped["hotkey"]["combination"] == "ctrl+shift"
+    assert stripped["postprocess"]["mode"] == "rewrite"
+    assert stripped["postprocess"]["model"] == "google/gemini-2.5-flash"
+    assert stripped["ui"]["sound_enabled"] is False
+
+
+def test_strip_deny_returns_dict_not_pydantic_model() -> None:
+    """Returns a plain dict (Pydantic dump shape) suitable for TOML serialize."""
+    from soyle.core.cloud_sync import _strip_deny
+    cfg = _make_config_with_overrides()
+    stripped = _strip_deny(cfg)
+    assert isinstance(stripped, dict)
