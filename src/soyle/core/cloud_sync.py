@@ -1159,6 +1159,126 @@ async def _drive_put_config(
         )
 
 
+def _serialize_usage_for_drive(data: dict[str, object]) -> bytes:
+    """Encode usage v2 state as compact JSON bytes."""
+    return json.dumps(data, ensure_ascii=False, separators=(",", ":")).encode(
+        "utf-8",
+    )
+
+
+async def _drive_get_usage(
+    *, access_token: str,
+) -> tuple[dict[str, object], _RemoteMeta | None]:
+    """Fetch usage.json from Drive App Data folder.
+
+    Returns:
+        (data, meta) — data is {} when file doesn't exist (meta None);
+        otherwise the parsed v2 nested dict and metadata for the next
+        write.
+
+    Raises:
+        DriveCorruptedError: file exists but JSON parse fails or shape
+            doesn't look like v2.
+        httpx.HTTPError: network / 5xx.
+    """
+    headers = {"Authorization": f"Bearer {access_token}"}
+    async with httpx.AsyncClient(timeout=15.0, headers=headers) as client:
+        list_resp = await client.get(
+            f"{DRIVE_API_BASE}/files",
+            params={
+                "spaces": "appDataFolder",
+                "q": f"name='{DRIVE_USAGE_FILE_NAME}' and trashed=false",
+                "fields": "files(id,name,modifiedTime)",
+            },
+        )
+        list_resp.raise_for_status()
+        files = list_resp.json().get("files", [])
+        if not files:
+            return {}, None
+
+        file_id = files[0]["id"]
+        modified_iso = files[0]["modifiedTime"]
+        modified_dt = datetime.fromisoformat(modified_iso.replace("Z", "+00:00"))
+
+        get_resp = await client.get(
+            f"{DRIVE_API_BASE}/files/{file_id}",
+            params={"alt": "media"},
+        )
+        get_resp.raise_for_status()
+        etag = get_resp.headers.get("ETag")
+
+    try:
+        parsed: object = json.loads(get_resp.content.decode("utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise DriveCorruptedError(file_id, exc) from exc
+
+    if not isinstance(parsed, dict):
+        raise DriveCorruptedError(
+            file_id, TypeError(f"usage root is {type(parsed).__name__}, expected dict"),
+        )
+
+    return parsed, _RemoteMeta(
+        file_id=file_id, etag=etag, modified_time=modified_dt,
+    )
+
+
+async def _drive_put_usage(
+    *,
+    access_token: str,
+    file_id: str | None,
+    etag: str | None,
+    usage_data: dict[str, object],
+) -> _RemoteMeta:
+    """Upload usage.json to Drive App Data. Multipart create when
+    file_id is None, PATCH with If-Match guard otherwise."""
+    body = _serialize_usage_for_drive(usage_data)
+    headers = {"Authorization": f"Bearer {access_token}"}
+
+    async with httpx.AsyncClient(timeout=20.0, headers=headers) as client:
+        if file_id is None:
+            metadata = {
+                "name": DRIVE_USAGE_FILE_NAME,
+                "parents": ["appDataFolder"],
+            }
+            metadata_bytes = json.dumps(metadata).encode("utf-8")
+            files = {
+                "metadata": ("metadata", metadata_bytes, "application/json"),
+                "media": (DRIVE_USAGE_FILE_NAME, body, "application/json"),
+            }
+            resp = await client.post(
+                f"{DRIVE_UPLOAD_BASE}/files",
+                params={"uploadType": "multipart"},
+                files=files,
+            )
+            resp.raise_for_status()
+            body_json = resp.json()
+            return _RemoteMeta(
+                file_id=body_json["id"],
+                etag=resp.headers.get("ETag"),
+                modified_time=datetime.now(UTC),
+            )
+
+        update_headers = {"Content-Type": "application/json"}
+        if etag is not None:
+            update_headers["If-Match"] = etag
+        resp = await client.patch(
+            f"{DRIVE_UPLOAD_BASE}/files/{file_id}",
+            params={"uploadType": "media"},
+            content=body,
+            headers=update_headers,
+        )
+        if resp.status_code == 412:
+            raise DriveConcurrentWriteError(
+                f"ETag mismatch for usage (file_id={file_id})"
+            )
+        resp.raise_for_status()
+        return _RemoteMeta(
+            file_id=file_id,
+            etag=resp.headers.get("ETag"),
+            modified_time=datetime.now(UTC),
+        )
+
+
 async def _drive_rename_corrupted(*, access_token: str, file_id: str) -> None:
     """Rename a Drive file to dictionary.toml.broken-<UTC-timestamp>.
 

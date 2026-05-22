@@ -1725,3 +1725,109 @@ async def test_drive_put_config_raises_concurrent_on_412() -> None:
             etag="stale",
             stripped_config={"hotkey": {"combination": "alt"}},
         )
+
+
+# ---- Task 10: Drive primitives for usage.json ----
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_drive_get_usage_returns_empty_when_404() -> None:
+    from soyle.core.cloud_sync import _drive_get_usage
+
+    respx.get(f"{_DRIVE_API_BASE}/files").mock(
+        return_value=httpx.Response(200, json={"files": []}),
+    )
+
+    data, meta = await _drive_get_usage(access_token="tok")
+    assert data == {}
+    assert meta is None
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_drive_get_usage_parses_remote_json() -> None:
+    from soyle.core.cloud_sync import _drive_get_usage
+
+    body = b'{"2026-05-22": {"dev-A": {"cost_usd": 0.05, "requests": 2}}}'
+    respx.get(f"{_DRIVE_API_BASE}/files").mock(
+        return_value=httpx.Response(200, json={
+            "files": [{
+                "id": "F2",
+                "name": "usage.json",
+                "modifiedTime": "2026-05-22T10:00:00.000Z",
+            }],
+        }),
+    )
+    respx.get(f"{_DRIVE_API_BASE}/files/F2").mock(
+        return_value=httpx.Response(
+            200, content=body, headers={"ETag": "xyz"},
+        ),
+    )
+
+    data, meta = await _drive_get_usage(access_token="tok")
+
+    assert data == {
+        "2026-05-22": {"dev-A": {"cost_usd": 0.05, "requests": 2}},
+    }
+    assert meta is not None
+    assert meta.file_id == "F2"
+    assert meta.etag == "xyz"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_drive_get_usage_raises_corrupted_on_invalid_json() -> None:
+    from soyle.core.cloud_sync import DriveCorruptedError, _drive_get_usage
+
+    respx.get(f"{_DRIVE_API_BASE}/files").mock(
+        return_value=httpx.Response(200, json={
+            "files": [{"id": "F2", "name": "usage.json", "modifiedTime": "2026-05-22T10:00:00.000Z"}],
+        }),
+    )
+    respx.get(f"{_DRIVE_API_BASE}/files/F2").mock(
+        return_value=httpx.Response(200, content=b"not json {{{"),
+    )
+
+    with pytest.raises(DriveCorruptedError):
+        await _drive_get_usage(access_token="tok")
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_drive_put_usage_creates_when_no_etag() -> None:
+    from soyle.core.cloud_sync import _drive_put_usage
+
+    create = respx.post(f"{_DRIVE_UPLOAD_BASE}/files").mock(
+        return_value=httpx.Response(200, json={"id": "NEW"}),
+    )
+
+    meta = await _drive_put_usage(
+        access_token="tok",
+        file_id=None,
+        etag=None,
+        usage_data={"2026-05-22": {"dev-A": {"cost_usd": 0.05, "requests": 2}}},
+    )
+    assert create.called
+    assert meta.file_id == "NEW"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_drive_put_usage_updates_existing_with_if_match() -> None:
+    from soyle.core.cloud_sync import _drive_put_usage
+
+    update = respx.patch(f"{_DRIVE_UPLOAD_BASE}/files/F2").mock(
+        return_value=httpx.Response(
+            200, json={"id": "F2"}, headers={"ETag": "new"},
+        ),
+    )
+
+    meta = await _drive_put_usage(
+        access_token="tok",
+        file_id="F2",
+        etag="old",
+        usage_data={"2026-05-22": {"dev-A": {"cost_usd": 0.01, "requests": 1}}},
+    )
+    assert update.called
+    assert update.calls.last.request.headers["If-Match"] == "old"
+    assert meta.etag == "new"
