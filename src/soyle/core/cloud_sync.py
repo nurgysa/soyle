@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import base64
 import contextlib
+import copy
 import enum
 import hashlib
 import json
@@ -447,6 +448,27 @@ def _merge_config(
         else:
             _set_dotted(winner_raw, path, local_value)
     return _Config.model_validate(winner_raw)
+
+
+def _merge_usage(
+    local: dict[str, dict[str, object]],
+    remote: dict[str, dict[str, object]],
+) -> dict[str, dict[str, object]]:
+    """Per-(date, device_id) LWW. Each device only writes its own keys,
+    so a "conflict" on (date, my_id) can't happen — only one device
+    writes that key. Remote-only keys (other devices' entries) carry
+    over verbatim; local entries for my_id are authoritative.
+
+    Deep-copies the result so callers can mutate freely without leaking
+    changes back to the input dicts (matters when respx mocks reuse
+    parsed bodies across test cases).
+    """
+    merged = copy.deepcopy(remote)
+    for date_str, devices in local.items():
+        merged.setdefault(date_str, {})
+        for device_id, bucket in devices.items():
+            merged[date_str][device_id] = copy.deepcopy(bucket)
+    return merged
 
 
 # ---- CloudSync coordinator --------------------------------------------------

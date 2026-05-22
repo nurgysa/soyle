@@ -1524,3 +1524,64 @@ def test_merge_config_version_stays_local() -> None:
         datetime(2026, 5, 22, 11, tzinfo=UTC),
     )
     assert merged.version == local.version
+
+
+# ---- Task 7: _merge_usage ----
+
+def test_merge_usage_per_device_lww_no_conflict_on_own_keys() -> None:
+    """A device only writes its own keys — same (date, device_id) tuple
+    never has competing values from two writers."""
+    from soyle.core.cloud_sync import _merge_usage
+
+    local = {"2026-05-22": {"dev-A": {"cost_usd": 0.05, "requests": 2}}}
+    remote = {"2026-05-22": {"dev-A": {"cost_usd": 0.03, "requests": 1}}}
+    # local owns dev-A's key; merge takes local's value
+    merged = _merge_usage(local, remote)
+    assert merged["2026-05-22"]["dev-A"] == {"cost_usd": 0.05, "requests": 2}
+
+
+def test_merge_usage_picks_up_remote_device_entries_verbatim() -> None:
+    from soyle.core.cloud_sync import _merge_usage
+
+    local = {"2026-05-22": {"dev-A": {"cost_usd": 0.05, "requests": 2}}}
+    remote = {"2026-05-22": {"dev-B": {"cost_usd": 0.07, "requests": 3}}}
+
+    merged = _merge_usage(local, remote)
+
+    assert merged["2026-05-22"] == {
+        "dev-A": {"cost_usd": 0.05, "requests": 2},
+        "dev-B": {"cost_usd": 0.07, "requests": 3},
+    }
+
+
+def test_merge_usage_unions_dates_across_devices() -> None:
+    from soyle.core.cloud_sync import _merge_usage
+
+    local = {"2026-05-22": {"dev-A": {"cost_usd": 0.05, "requests": 2}}}
+    remote = {"2026-05-21": {"dev-B": {"cost_usd": 0.03, "requests": 1}}}
+
+    merged = _merge_usage(local, remote)
+
+    assert merged == {
+        "2026-05-21": {"dev-B": {"cost_usd": 0.03, "requests": 1}},
+        "2026-05-22": {"dev-A": {"cost_usd": 0.05, "requests": 2}},
+    }
+
+
+def test_merge_usage_empty_local_returns_remote_copy() -> None:
+    from soyle.core.cloud_sync import _merge_usage
+
+    remote = {"2026-05-22": {"dev-B": {"cost_usd": 0.07, "requests": 3}}}
+    merged = _merge_usage({}, remote)
+    assert merged == remote
+    # Independent — mutation of merged must not leak back to remote
+    merged["2026-05-22"]["dev-B"]["cost_usd"] = 999.0
+    assert remote["2026-05-22"]["dev-B"]["cost_usd"] == 0.07
+
+
+def test_merge_usage_empty_remote_returns_local_copy() -> None:
+    from soyle.core.cloud_sync import _merge_usage
+
+    local = {"2026-05-22": {"dev-A": {"cost_usd": 0.05, "requests": 2}}}
+    merged = _merge_usage(local, {})
+    assert merged == local
