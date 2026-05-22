@@ -20,6 +20,7 @@ import secrets
 import socketserver
 import threading
 import tomllib
+import uuid
 import webbrowser
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -261,6 +262,34 @@ class _TokenStore:
     def clear(self) -> None:
         with contextlib.suppress(keyring.errors.PasswordDeleteError):
             keyring.delete_password(KEYRING_SERVICE, KEYRING_USERNAME)
+
+
+# ---- Device identity --------------------------------------------------------
+
+# APP_NAME is imported from config to keep keyring service names in one place.
+# Distinct service ("Söyle Cloud") is for OAuth refresh token; device-id uses
+# APP_NAME ("Söyle") with username "device-id" so the two don't collide and
+# either can be cleared independently.
+from soyle.core.config import APP_NAME as _APP_NAME  # noqa: E402
+
+_DEVICE_ID_KEYRING_USERNAME = "device-id"
+
+
+def _device_id() -> str:
+    """Stable per-machine UUID. Generated on first call, persisted in
+    Windows Credential Manager under (APP_NAME, "device-id"). Survives
+    config wipes; new machine = new ID by definition.
+
+    Used by usage.py per-device buckets to attribute LLM cost/requests
+    to the device that recorded them, so cross-device merge avoids
+    double-counting on the same date.
+    """
+    existing = keyring.get_password(_APP_NAME, _DEVICE_ID_KEYRING_USERNAME)
+    if existing:
+        return existing
+    new_id = str(uuid.uuid4())
+    keyring.set_password(_APP_NAME, _DEVICE_ID_KEYRING_USERNAME, new_id)
+    return new_id
 
 
 # ---- CloudSync coordinator --------------------------------------------------
