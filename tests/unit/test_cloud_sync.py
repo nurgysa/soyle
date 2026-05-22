@@ -4,6 +4,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import threading
+import uuid as _uuid
 from datetime import UTC, datetime, timedelta
 from urllib.parse import urlencode
 from urllib.request import urlopen
@@ -1044,7 +1045,6 @@ def test_device_id_generated_on_first_call_when_keyring_empty(
     result = cs._device_id()
 
     # Full canonical UUID4 format check (validates all 4 dashes + version byte)
-    import uuid as _uuid
     assert _uuid.UUID(result).version == 4
     assert stored == {("Söyle", "device-id"): result}
 
@@ -1072,3 +1072,79 @@ def test_device_id_persisted_across_restarts(
 
     assert result == "11111111-2222-3333-4444-555555555555"
     assert set_calls == []
+
+
+# ---- Device identity: keyring failure fallback ----
+
+def test_device_id_falls_back_to_process_uuid_when_get_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """KeyringError on get_password → in-memory fallback UUID, no crash."""
+    from soyle.core import cloud_sync as cs
+
+    def raising_get(service: str, user: str) -> str | None:
+        raise cs.keyring.errors.KeyringError("backend unavailable")
+
+    monkeypatch.setattr(cs.keyring, "get_password", raising_get)
+    monkeypatch.setattr(cs, "_DEVICE_ID_FALLBACK", None)  # reset cache
+
+    result = cs._device_id()
+
+    # Valid UUID4 — fallback succeeded
+    assert _uuid.UUID(result).version == 4
+
+
+def test_device_id_falls_back_to_process_uuid_when_set_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """KeyringError on set_password → in-memory fallback UUID, no crash."""
+    from soyle.core import cloud_sync as cs
+
+    monkeypatch.setattr(
+        cs.keyring, "get_password",
+        lambda service, user: None,  # nothing stored
+    )
+
+    def raising_set(service: str, user: str, pwd: str) -> None:
+        raise cs.keyring.errors.KeyringError("backend write-locked")
+
+    monkeypatch.setattr(cs.keyring, "set_password", raising_set)
+    monkeypatch.setattr(cs, "_DEVICE_ID_FALLBACK", None)
+
+    result = cs._device_id()
+    assert _uuid.UUID(result).version == 4
+
+
+def test_device_id_fallback_is_stable_within_process(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Two calls under keyring failure return the SAME fallback UUID
+    — usage tracking stays consistent within a single Söyle run."""
+    from soyle.core import cloud_sync as cs
+
+    def raising_get(service: str, user: str) -> str | None:
+        raise cs.keyring.errors.KeyringError("backend unavailable")
+
+    monkeypatch.setattr(cs.keyring, "get_password", raising_get)
+    monkeypatch.setattr(cs, "_DEVICE_ID_FALLBACK", None)
+
+    first = cs._device_id()
+    second = cs._device_id()
+    assert first == second  # cached after first call
+
+
+def test_device_id_no_keyring_error_subclass_also_falls_back(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """NoKeyringError (subclass of KeyringError) should also trigger fallback,
+    not crash."""
+    from soyle.core import cloud_sync as cs
+
+    def raising_get(service: str, user: str) -> str | None:
+        raise cs.keyring.errors.NoKeyringError("no backend configured")
+
+    monkeypatch.setattr(cs.keyring, "get_password", raising_get)
+    monkeypatch.setattr(cs, "_DEVICE_ID_FALLBACK", None)
+
+    result = cs._device_id()
+    assert _uuid.UUID(result).version == 4
