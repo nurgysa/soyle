@@ -177,6 +177,11 @@ class SoyleApp(QObject):
                        "a real Desktop OAuth Client ID to enable Drive sync.",
             )
 
+        # Wire the debounced push: every ConfigStore.save() will arm the
+        # 8-second QTimer in CloudSync. No-op when not connected (the
+        # _push_config_now coroutine checks is_connected before any I/O).
+        self._store.set_push_hook(self._cloud_sync.schedule_config_push)
+
         self._target_hwnd = 0
 
         self._wire_events()
