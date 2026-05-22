@@ -1445,3 +1445,82 @@ def test_strip_deny_returns_dict_not_pydantic_model() -> None:
     cfg = _make_config_with_overrides()
     stripped = _strip_deny(cfg)
     assert isinstance(stripped, dict)
+
+
+# ---- Task 6: _merge_config ----
+
+def test_merge_config_remote_wins_when_remote_mtime_newer() -> None:
+    from soyle.core.cloud_sync import _merge_config
+
+    local = _make_config_with_overrides(hotkey={"combination": "alt"})
+    remote = _make_config_with_overrides(hotkey={"combination": "ctrl"})
+    local_mtime = datetime(2026, 5, 22, 10, 0, 0, tzinfo=UTC)
+    remote_mtime = datetime(2026, 5, 22, 11, 0, 0, tzinfo=UTC)
+
+    merged = _merge_config(local, remote, local_mtime, remote_mtime)
+    assert merged.hotkey.combination == "ctrl"
+
+
+def test_merge_config_local_wins_when_local_mtime_newer() -> None:
+    from soyle.core.cloud_sync import _merge_config
+
+    local = _make_config_with_overrides(hotkey={"combination": "alt"})
+    remote = _make_config_with_overrides(hotkey={"combination": "ctrl"})
+    local_mtime = datetime(2026, 5, 22, 11, 0, 0, tzinfo=UTC)
+    remote_mtime = datetime(2026, 5, 22, 10, 0, 0, tzinfo=UTC)
+
+    merged = _merge_config(local, remote, local_mtime, remote_mtime)
+    assert merged.hotkey.combination == "alt"
+
+
+def test_merge_config_preserves_deny_list_from_local_when_remote_wins() -> None:
+    """Even when remote wins on mtime, deny-list fields stay local."""
+    from soyle.core.cloud_sync import _merge_config
+
+    local = _make_config_with_overrides(
+        whisper={"model": "small"},
+        hotkey={"combination": "alt"},
+    )
+    remote = _make_config_with_overrides(
+        whisper={"model": "large-v3"},
+        hotkey={"combination": "ctrl"},
+    )
+    local_mtime = datetime(2026, 5, 22, 10, 0, 0, tzinfo=UTC)
+    remote_mtime = datetime(2026, 5, 22, 11, 0, 0, tzinfo=UTC)
+
+    merged = _merge_config(local, remote, local_mtime, remote_mtime)
+    assert merged.hotkey.combination == "ctrl"
+    assert merged.whisper.model == "small"
+
+
+def test_merge_config_preserves_cloud_sync_section_from_local() -> None:
+    """The entire cloud_sync section stays local — per-device state."""
+    from soyle.core.cloud_sync import _merge_config
+
+    local = _make_config_with_overrides(
+        cloud_sync={"last_synced_at": datetime(2026, 5, 22, 12, tzinfo=UTC)},
+    )
+    remote = _make_config_with_overrides(
+        cloud_sync={"last_synced_at": datetime(2020, 1, 1, tzinfo=UTC)},
+    )
+    local_mtime = datetime(2026, 5, 22, 10, 0, 0, tzinfo=UTC)
+    remote_mtime = datetime(2026, 5, 22, 11, 0, 0, tzinfo=UTC)
+
+    merged = _merge_config(local, remote, local_mtime, remote_mtime)
+    assert merged.cloud_sync.last_synced_at == datetime(
+        2026, 5, 22, 12, tzinfo=UTC,
+    )
+
+
+def test_merge_config_version_stays_local() -> None:
+    """version is in deny-list — local schema version is authoritative."""
+    from soyle.core.cloud_sync import _merge_config
+
+    local = _make_config_with_overrides()
+    remote = _make_config_with_overrides()
+    merged = _merge_config(
+        local, remote,
+        datetime(2026, 5, 22, 10, tzinfo=UTC),
+        datetime(2026, 5, 22, 11, tzinfo=UTC),
+    )
+    assert merged.version == local.version

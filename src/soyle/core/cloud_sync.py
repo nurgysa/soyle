@@ -423,6 +423,32 @@ def _strip_deny(config: Config) -> dict[str, object]:
     return raw
 
 
+def _merge_config(
+    local: Config,
+    remote: Config,
+    local_mtime: datetime,
+    remote_mtime: datetime,
+) -> Config:
+    """LWW by mtime; preserve deny-list paths from local.
+
+    Whoever's mtime is newer wins the whole file. Then every deny-list
+    path is re-overlaid from local — keeping per-device fields (mic,
+    GPU tier, autostart, theme) untouched even when remote wins.
+    """
+    from soyle.core.config import Config as _Config  # local import to avoid circularity
+
+    winner = remote if remote_mtime > local_mtime else local
+    winner_raw = winner.model_dump(mode="json", exclude_none=True)
+    local_raw = local.model_dump(mode="json", exclude_none=True)
+    for path in _CONFIG_DENY_LIST:
+        local_value = _get_dotted(local_raw, path)
+        if local_value is None:
+            _del_dotted(winner_raw, path)
+        else:
+            _set_dotted(winner_raw, path, local_value)
+    return _Config.model_validate(winner_raw)
+
+
 # ---- CloudSync coordinator --------------------------------------------------
 
 SYNC_INTERVAL = timedelta(hours=24)
