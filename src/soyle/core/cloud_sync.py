@@ -274,11 +274,17 @@ from soyle.core.config import APP_NAME as _APP_NAME  # noqa: E402
 
 _DEVICE_ID_KEYRING_USERNAME = "device-id"
 
-# Process-lifetime fallback for the case where keyring is unavailable.
-# Set lazily by _device_id() on the first keyring failure; reused on
-# subsequent calls within the same process so usage recording stays
-# consistent for the session even when persistence is broken.
+# Two-stage cache for the case where keyring is unavailable:
+# - _DEVICE_ID_LAST_KNOWN: last value we successfully READ from keyring
+#   this process. Reused on transient read failures so usage stays in
+#   a single bucket even when the backend flaps.
+# - _DEVICE_ID_FALLBACK: cold-start fallback used when we've NEVER had
+#   a successful read (keyring was broken from the very first call).
+# When keyring recovers and we read a real ID, that real ID becomes
+# the last-known and subsequent failures stop using the cold-start
+# fallback — graceful upgrade.
 _DEVICE_ID_FALLBACK: str | None = None
+_DEVICE_ID_LAST_KNOWN: str | None = None
 
 
 def _device_id() -> str:
@@ -292,15 +298,20 @@ def _device_id() -> str:
 
     Degrades gracefully on keyring failure: if the credential backend
     is unavailable, locked, or unconfigured (KeyringError or any
-    subclass), falls back to a process-lifetime in-memory UUID. Usage
-    recording still works; the ID is regenerated on each restart and
-    one warning is logged.
+    subclass), reuses the last-known real ID from this process if one
+    was ever read successfully; otherwise falls back to a
+    process-lifetime in-memory UUID. Usage recording still works; one
+    warning is logged on the first cold-start fallback.
     """
-    global _DEVICE_ID_FALLBACK
+    global _DEVICE_ID_FALLBACK, _DEVICE_ID_LAST_KNOWN
 
     try:
         existing = keyring.get_password(_APP_NAME, _DEVICE_ID_KEYRING_USERNAME)
     except keyring.errors.KeyringError as exc:
+        # Prefer last-known real ID over minting a fresh fallback —
+        # avoids splitting usage across buckets during transient outages.
+        if _DEVICE_ID_LAST_KNOWN is not None:
+            return _DEVICE_ID_LAST_KNOWN
         if _DEVICE_ID_FALLBACK is None:
             _DEVICE_ID_FALLBACK = str(uuid.uuid4())
             _log.warning(
@@ -311,12 +322,18 @@ def _device_id() -> str:
         return _DEVICE_ID_FALLBACK
 
     if existing:
+        # Successful read — remember it so transient failures don't
+        # split the session into a different bucket.
+        _DEVICE_ID_LAST_KNOWN = existing
         return existing
 
+    # Fresh device — mint and try to persist.
     new_id = str(uuid.uuid4())
     try:
         keyring.set_password(_APP_NAME, _DEVICE_ID_KEYRING_USERNAME, new_id)
     except keyring.errors.KeyringError as exc:
+        # Write blocked — treat the minted ID as both fallback and
+        # last-known so a subsequent read-fail returns the same value.
         if _DEVICE_ID_FALLBACK is None:
             _DEVICE_ID_FALLBACK = new_id
             _log.warning(
@@ -324,7 +341,10 @@ def _device_id() -> str:
                 error=str(exc),
                 error_type=type(exc).__name__,
             )
+        _DEVICE_ID_LAST_KNOWN = new_id
         return _DEVICE_ID_FALLBACK
+    # Persisted successfully — also cache for read-fail recovery.
+    _DEVICE_ID_LAST_KNOWN = new_id
     return new_id
 
 
