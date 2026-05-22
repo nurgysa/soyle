@@ -5,6 +5,8 @@ import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import pytest
+
 from soyle.core.usage import UsageTracker
 
 
@@ -75,3 +77,97 @@ def test_summary_line_formatting(tmp_path: Path) -> None:
     assert "Сегодня" in line
     assert "$0.0012" in line
     assert "(1)" in line
+
+
+# ---- Phase 2: per-device schema ----
+
+
+def _stub_device_id(monkeypatch: pytest.MonkeyPatch, device: str) -> None:
+    """Force usage._device_id() (re-exported from cloud_sync) to return `device`."""
+    from soyle.core import usage as u
+    monkeypatch.setattr(u, "_device_id", lambda: device)
+
+
+def test_record_writes_only_to_own_device_bucket(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _stub_device_id(monkeypatch, "dev-A")
+    tracker = UsageTracker(tmp_path / "usage.json")
+    tracker.record(0.01)
+
+    raw = json.loads((tmp_path / "usage.json").read_text(encoding="utf-8"))
+    [date_key] = raw.keys()
+    assert raw[date_key] == {"dev-A": {"cost_usd": 0.01, "requests": 1}}
+
+
+def test_record_accumulates_within_own_bucket_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Two calls on the same device sum into one bucket, not split per-call."""
+    _stub_device_id(monkeypatch, "dev-A")
+    tracker = UsageTracker(tmp_path / "usage.json")
+    tracker.record(0.01)
+    tracker.record(0.02)
+
+    raw = json.loads((tmp_path / "usage.json").read_text(encoding="utf-8"))
+    [date_key] = raw.keys()
+    bucket = raw[date_key]["dev-A"]
+    assert bucket["cost_usd"] == pytest.approx(0.03)
+    assert bucket["requests"] == 2
+
+
+def test_record_does_not_touch_other_devices_bucket(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An existing 'dev-B' entry on disk survives when 'dev-A' records."""
+    seed = {
+        "2026-05-22": {"dev-B": {"cost_usd": 0.05, "requests": 3}},
+    }
+    (tmp_path / "usage.json").write_text(json.dumps(seed), encoding="utf-8")
+    _stub_device_id(monkeypatch, "dev-A")
+    from soyle.core import usage as u
+    monkeypatch.setattr(u.UsageTracker, "_today_key", staticmethod(lambda: "2026-05-22"))
+
+    tracker = UsageTracker(tmp_path / "usage.json")
+    tracker.record(0.01)
+
+    raw = json.loads((tmp_path / "usage.json").read_text(encoding="utf-8"))
+    assert raw["2026-05-22"]["dev-B"] == {"cost_usd": 0.05, "requests": 3}
+    assert raw["2026-05-22"]["dev-A"] == {"cost_usd": 0.01, "requests": 1}
+
+
+def test_load_migrates_v1_flat_schema_to_v2_per_device(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """v1 file (flat {date: {cost, requests}}) is detected and rewritten to v2
+    on first load, attributing all entries to current device."""
+    v1_data = {
+        "2026-05-20": {"cost_usd": 0.10, "requests": 5},
+        "2026-05-21": {"cost_usd": 0.20, "requests": 8},
+    }
+    (tmp_path / "usage.json").write_text(json.dumps(v1_data), encoding="utf-8")
+    _stub_device_id(monkeypatch, "dev-A")
+
+    tracker = UsageTracker(tmp_path / "usage.json")
+    serialized = tracker.serialize_for_sync()
+    assert serialized == {
+        "2026-05-20": {"dev-A": {"cost_usd": 0.10, "requests": 5}},
+        "2026-05-21": {"dev-A": {"cost_usd": 0.20, "requests": 8}},
+    }
+
+
+def test_v2_schema_passes_through_load_unchanged(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Loading a v2-format file does not corrupt or re-migrate it."""
+    v2_data = {
+        "2026-05-22": {
+            "dev-A": {"cost_usd": 0.05, "requests": 2},
+            "dev-B": {"cost_usd": 0.07, "requests": 4},
+        },
+    }
+    (tmp_path / "usage.json").write_text(json.dumps(v2_data), encoding="utf-8")
+    _stub_device_id(monkeypatch, "dev-A")
+
+    tracker = UsageTracker(tmp_path / "usage.json")
+    assert tracker.serialize_for_sync() == v2_data
