@@ -522,6 +522,25 @@ class RestoreOption:
     last_modified: datetime
 
 
+# Outcome severity for sync_now aggregation. Higher index = worse.
+# Order: anything where we know we tried beats "didn't try"; auth_revoked
+# at the top because it tells the user "you need to act now".
+_OUTCOME_SEVERITY: dict[SyncOutcome, int] = {
+    SyncOutcome.OK: 0,
+    SyncOutcome.NOT_CONNECTED: 1,
+    SyncOutcome.NETWORK: 2,
+    SyncOutcome.QUOTA: 3,
+    SyncOutcome.UNEXPECTED: 4,
+    SyncOutcome.APP_SUSPENDED: 5,
+    SyncOutcome.AUTH_REVOKED: 6,
+}
+
+
+def _worst_outcome(*outcomes: SyncOutcome) -> SyncOutcome:
+    """Return the outcome with the highest severity."""
+    return max(outcomes, key=lambda o: _OUTCOME_SEVERITY[o])
+
+
 class CloudSync:
     """Coordinator for Google Drive sync of dictionary.toml.
 
@@ -759,7 +778,43 @@ class CloudSync:
 
         return await self._sync_with_token(access)
 
-    async def _sync_with_token(self, access: str, _attempt: int = 0) -> SyncResult:
+    async def _sync_with_token(self, access: str) -> SyncResult:
+        """Run dict + config + usage in sequence; aggregate worst outcome.
+
+        Each phase is independently fallible: per spec §6.1 we don't
+        stop the loop on partial failure — a corrupted usage file
+        shouldn't prevent the dictionary from syncing.
+        """
+        dict_result = await self._sync_dictionary(access)
+        config_result = await self._sync_config(access_token=access)
+        usage_result = await self._sync_usage(access_token=access)
+
+        worst = _worst_outcome(
+            dict_result.outcome,
+            config_result.outcome,
+            usage_result.outcome,
+        )
+
+        # Stamp last_synced_at only if AT LEAST one file made progress.
+        if worst != SyncOutcome.AUTH_REVOKED:
+            cfg = self._config_store.load()
+            cfg.cloud_sync.last_synced_at = datetime.now(UTC)
+            self._config_store.save(cfg)
+
+        _log.info(
+            "cloud_sync_round_trip_done",
+            dict=dict_result.outcome.name,
+            config=config_result.outcome.name,
+            usage=usage_result.outcome.name,
+            worst=worst.name,
+        )
+        return SyncResult(
+            outcome=worst,
+            added_local=dict_result.added_local,
+            added_remote=dict_result.added_remote,
+        )
+
+    async def _sync_dictionary(self, access: str, _attempt: int = 0) -> SyncResult:
         # Read remote (and look up file_id for the eventual write).
         try:
             remote, etag = await _drive_get_dictionary(access_token=access)
@@ -809,17 +864,13 @@ class CloudSync:
                 _log.info(
                     "cloud_sync_concurrent_write_detected", attempt=_attempt + 1,
                 )
-                return await self._sync_with_token(access, _attempt + 1)
+                return await self._sync_dictionary(access, _attempt + 1)
             except (httpx.ConnectError, httpx.ReadError, httpx.TimeoutException):
                 _log.warning("cloud_sync_network_error", phase="drive_put")
                 return SyncResult(outcome=SyncOutcome.NETWORK)
             except httpx.HTTPStatusError as exc:
                 return self._classify_drive_error(exc, phase="drive_put")
 
-        # Stamp success.
-        cfg = self._config_store.load()
-        cfg.cloud_sync.last_synced_at = datetime.now(UTC)
-        self._config_store.save(cfg)
         _log.info(
             "cloud_sync_ok",
             added_local=added_local,
@@ -1247,8 +1298,12 @@ async def _drive_get_config(
             return None, None
 
         file_id = files[0]["id"]
-        modified_iso = files[0]["modifiedTime"]
-        modified_dt = datetime.fromisoformat(modified_iso.replace("Z", "+00:00"))
+        modified_iso = files[0].get("modifiedTime", "")
+        modified_dt = (
+            datetime.fromisoformat(modified_iso.replace("Z", "+00:00"))
+            if modified_iso
+            else datetime.now(UTC)
+        )
 
         get_resp = await client.get(
             f"{DRIVE_API_BASE}/files/{file_id}",
@@ -1451,8 +1506,12 @@ async def _drive_get_usage(
             return {}, None
 
         file_id = files[0]["id"]
-        modified_iso = files[0]["modifiedTime"]
-        modified_dt = datetime.fromisoformat(modified_iso.replace("Z", "+00:00"))
+        modified_iso = files[0].get("modifiedTime", "")
+        modified_dt = (
+            datetime.fromisoformat(modified_iso.replace("Z", "+00:00"))
+            if modified_iso
+            else datetime.now(UTC)
+        )
 
         get_resp = await client.get(
             f"{DRIVE_API_BASE}/files/{file_id}",
