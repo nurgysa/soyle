@@ -222,6 +222,69 @@ or real PyInstaller bundles — none of which are practical to automate.
 - Real-time propagation between devices (planned Phase 3)
 - Encryption beyond Google's defaults (planned Phase 3+)
 
+## Cloud Sync (Phase 2)
+
+Сценарии проверяют, что синхронизация config.toml и usage.json
+работает корректно в реальном Drive. Требует двух машин (или одной
+машины + временно очищенного `%APPDATA%\Soyle\` для имитации второй).
+
+### A. Settings sync — push на одном устройстве, pull на другом
+
+- [ ] На устройстве 1: подключи Drive, сохрани какую-то синкаемую
+      настройку (Settings → Hotkey → измени combination → Save).
+- [ ] Подожди 10 секунд (8с debounce + 2с overhead).
+- [ ] Открой Settings → Cloud Sync — "Последняя синхронизация: только
+      что".
+- [ ] На устройстве 2: Söyle уже запущен → закрой и перезапусти, чтобы
+      сработал startup sync_now. Открой Settings → Hotkey: значение
+      должно совпадать с устройством 1.
+
+### B. Deny-list соблюдён — device-local поля НЕ синкаются
+
+- [ ] На устройстве 1: измени Whisper → Model на large-v3, сохрани.
+- [ ] Жди 10 секунд.
+- [ ] На устройстве 2 после перезапуска: Whisper → Model должен
+      остаться твоим прежним значением (например, large-v3-turbo).
+
+### C. Cross-device cost tracking
+
+- [ ] На устройстве 1: сделай 1-2 диктовки с post-process включенным
+      (накапливает usage.json).
+- [ ] Подожди ежедневный sync_now (или жми Settings → Cloud Sync →
+      "Sync now").
+- [ ] На устройстве 2 после перезапуска: tray меню → "Сегодня: $X" —
+      сумма должна включать стоимость с устройства 1.
+- [ ] Если установлен `behavior.monthly_cost_limit_usd`, проверь, что
+      warning срабатывает на cross-device суммы, а не только локальные.
+
+### D. First-run wizard — settings restore prompt
+
+- [ ] Очисти `%APPDATA%\Soyle\` полностью (бэкап сначала!).
+- [ ] Запусти Söyle → wizard → подключи Drive.
+- [ ] Появится prompt "Найдены настройки с другого устройства. Применить?"
+- [ ] Нажми "Да" → проверь, что synced поля восстановились (hotkey,
+      postprocess.mode, prompts), а device-local поля — defaults.
+
+### E. Disconnect → reconnect не теряет данные
+
+- [ ] Подключи Drive, синкни, отключи (Settings → Disconnect).
+- [ ] Поменяй настройки локально.
+- [ ] Подключи Drive обратно.
+- [ ] Локальные изменения должны попасть в Drive после первого
+      sync_now (как обычно через mtime LWW).
+
+### F. Schema mismatch (forward-compat)
+
+Этот сценарий требует двух версий Söyle: одной с дополнительным полем
+в Pydantic Config (вручную добавить временно), другой без.
+
+- [ ] Старая Söyle → подключи Drive → синкни (создаёт config.toml в Drive).
+- [ ] Новая Söyle → подключи тот же Drive → измени любое поле → push.
+- [ ] Старая Söyle → запусти → daily sync_now должен НЕ упасть, НЕ
+      переименовать .broken, НЕ перезаписать. Логи покажут
+      `cloud_sync_config_schema_mismatch`. Локальный config.toml
+      остаётся прежним.
+
 ## Stability
 
 - [ ] 30 consecutive transcriptions without crash

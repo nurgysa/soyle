@@ -349,6 +349,18 @@ class SettingsWindow(QMainWindow):
         w = QWidget()
         layout = QVBoxLayout(w)
 
+        _cs_desc = QLabel(
+            "Синхронизация словаря, настроек и истории usage через Google Drive.\n"
+            "Запускается ежедневно при старте Söyle; изменения настроек уходят\n"
+            "сразу же (с задержкой ~8 секунд). Поля привязанные к железу\n"
+            "(микрофон, модель Whisper, тема) остаются локальными."
+        )
+        _cs_desc.setWordWrap(True)
+        _cs_desc.setStyleSheet("color: #888; font-size: 11px;")
+        layout.addWidget(_cs_desc)
+
+        layout.addSpacing(8)
+
         self._cs_status_label = QLabel(self._cloud_sync_status_text())
         layout.addWidget(self._cs_status_label)
 
