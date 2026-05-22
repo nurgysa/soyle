@@ -1288,3 +1288,88 @@ def test_device_id_set_failure_preserves_active_fallback(
     second = cs._device_id()
     assert second == "fallback-A"
     assert second == first
+
+
+# ---- Task 4: deny-list + dotted-path helpers ----
+
+def test_config_deny_list_contains_expected_device_local_paths() -> None:
+    from soyle.core import cloud_sync as cs
+    expected = {
+        "version",
+        "audio.device",
+        "whisper.model",
+        "whisper.device",
+        "whisper.compute_type",
+        "behavior.autostart",
+        "behavior.inject_method",
+        "ui.theme",
+        "cloud_sync",
+    }
+    assert frozenset(expected) == cs._CONFIG_DENY_LIST
+
+
+def test_get_dotted_returns_value_at_nested_path() -> None:
+    from soyle.core.cloud_sync import _get_dotted
+    data = {"hotkey": {"combination": "right alt", "mode": "push_to_talk"}}
+    assert _get_dotted(data, "hotkey.combination") == "right alt"
+
+
+def test_get_dotted_returns_top_level_value_for_single_segment() -> None:
+    from soyle.core.cloud_sync import _get_dotted
+    data = {"version": 1, "hotkey": {"combination": "right alt"}}
+    assert _get_dotted(data, "version") == 1
+
+
+def test_get_dotted_returns_none_when_path_missing() -> None:
+    from soyle.core.cloud_sync import _get_dotted
+    data = {"hotkey": {"combination": "right alt"}}
+    assert _get_dotted(data, "audio.device") is None
+    assert _get_dotted(data, "hotkey.nonexistent") is None
+
+
+def test_set_dotted_creates_intermediate_dicts_when_missing() -> None:
+    from soyle.core.cloud_sync import _set_dotted
+    data: dict = {}
+    _set_dotted(data, "audio.device", "default")
+    assert data == {"audio": {"device": "default"}}
+
+
+def test_set_dotted_overwrites_existing_value() -> None:
+    from soyle.core.cloud_sync import _set_dotted
+    data: dict = {"audio": {"device": "old"}}
+    _set_dotted(data, "audio.device", "new")
+    assert data["audio"]["device"] == "new"
+
+
+def test_set_dotted_handles_top_level_path() -> None:
+    from soyle.core.cloud_sync import _set_dotted
+    data: dict = {"hotkey": {"combination": "alt"}}
+    _set_dotted(data, "version", 2)
+    assert data["version"] == 2
+
+
+def test_del_dotted_removes_leaf_value() -> None:
+    from soyle.core.cloud_sync import _del_dotted
+    data: dict = {"audio": {"device": "default", "sample_rate": 16000}}
+    _del_dotted(data, "audio.device")
+    assert data == {"audio": {"sample_rate": 16000}}
+
+
+def test_del_dotted_removes_entire_section_when_path_is_section_root() -> None:
+    """Deleting 'cloud_sync' removes the whole [cloud_sync] section."""
+    from soyle.core.cloud_sync import _del_dotted
+    data: dict = {
+        "hotkey": {"combination": "alt"},
+        "cloud_sync": {"last_synced_at": "2026-05-22T10:00:00+00:00"},
+    }
+    _del_dotted(data, "cloud_sync")
+    assert "cloud_sync" not in data
+    assert "hotkey" in data
+
+
+def test_del_dotted_silent_when_path_missing() -> None:
+    """No-op (no exception) if the path doesn't exist."""
+    from soyle.core.cloud_sync import _del_dotted
+    data: dict = {"hotkey": {"combination": "alt"}}
+    _del_dotted(data, "audio.device")  # should not raise
+    assert data == {"hotkey": {"combination": "alt"}}

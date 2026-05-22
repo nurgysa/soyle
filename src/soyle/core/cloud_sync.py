@@ -352,6 +352,60 @@ def _device_id() -> str:
     return new_id
 
 
+# ---- Phase 2: Config deny-list + dotted-path helpers ------------------------
+
+# Dotted paths from Config root that are NEVER synced — these stay per-device.
+# Format matches Pydantic model_dump keys: top-level section + dot + field,
+# or just the section name to skip the entire section.
+_CONFIG_DENY_LIST: frozenset[str] = frozenset({
+    "version",                 # schema metadata, not a user preference
+    "audio.device",            # mic name differs per machine
+    "whisper.model",           # GPU tier dictates which preset is usable
+    "whisper.device",          # cuda/cpu/auto — hardware-bound
+    "whisper.compute_type",    # int8/float16 — GPU-dependent
+    "behavior.autostart",      # often true on one machine, false on another
+    "behavior.inject_method",  # clipboard/keystroke — per-app workarounds vary
+    "ui.theme",                # monitor-dependent preference
+    "cloud_sync",              # entire section: per-device last_synced_at state
+})
+
+
+def _get_dotted(data: dict[str, object], path: str) -> object:
+    """Look up `path` in `data` ("foo.bar.baz"); return None if missing."""
+    parts = path.split(".")
+    current: object = data
+    for part in parts:
+        if not isinstance(current, dict) or part not in current:
+            return None
+        current = current[part]
+    return current
+
+
+def _set_dotted(data: dict[str, object], path: str, value: object) -> None:
+    """Set `path` in `data` to `value`. Creates intermediate dicts."""
+    parts = path.split(".")
+    cursor: dict[str, object] = data
+    for part in parts[:-1]:
+        next_level = cursor.get(part)
+        if not isinstance(next_level, dict):
+            next_level = {}
+            cursor[part] = next_level
+        cursor = next_level
+    cursor[parts[-1]] = value
+
+
+def _del_dotted(data: dict[str, object], path: str) -> None:
+    """Remove `path` from `data` if present; silent no-op otherwise."""
+    parts = path.split(".")
+    cursor: dict[str, object] = data
+    for part in parts[:-1]:
+        next_level = cursor.get(part)
+        if not isinstance(next_level, dict):
+            return
+        cursor = next_level
+    cursor.pop(parts[-1], None)
+
+
 # ---- CloudSync coordinator --------------------------------------------------
 
 SYNC_INTERVAL = timedelta(hours=24)
