@@ -274,6 +274,12 @@ from soyle.core.config import APP_NAME as _APP_NAME  # noqa: E402
 
 _DEVICE_ID_KEYRING_USERNAME = "device-id"
 
+# Process-lifetime fallback for the case where keyring is unavailable.
+# Set lazily by _device_id() on the first keyring failure; reused on
+# subsequent calls within the same process so usage recording stays
+# consistent for the session even when persistence is broken.
+_DEVICE_ID_FALLBACK: str | None = None
+
 
 def _device_id() -> str:
     """Stable per-machine UUID. Generated on first call, persisted in
@@ -283,12 +289,42 @@ def _device_id() -> str:
     Used by usage.py per-device buckets to attribute LLM cost/requests
     to the device that recorded them, so cross-device merge avoids
     double-counting on the same date.
+
+    Degrades gracefully on keyring failure: if the credential backend
+    is unavailable, locked, or unconfigured (KeyringError or any
+    subclass), falls back to a process-lifetime in-memory UUID. Usage
+    recording still works; the ID is regenerated on each restart and
+    one warning is logged.
     """
-    existing = keyring.get_password(_APP_NAME, _DEVICE_ID_KEYRING_USERNAME)
+    global _DEVICE_ID_FALLBACK
+
+    try:
+        existing = keyring.get_password(_APP_NAME, _DEVICE_ID_KEYRING_USERNAME)
+    except keyring.errors.KeyringError as exc:
+        if _DEVICE_ID_FALLBACK is None:
+            _DEVICE_ID_FALLBACK = str(uuid.uuid4())
+            _log.warning(
+                "device_id_keyring_unavailable_using_fallback",
+                error=str(exc),
+                error_type=type(exc).__name__,
+            )
+        return _DEVICE_ID_FALLBACK
+
     if existing:
         return existing
+
     new_id = str(uuid.uuid4())
-    keyring.set_password(_APP_NAME, _DEVICE_ID_KEYRING_USERNAME, new_id)
+    try:
+        keyring.set_password(_APP_NAME, _DEVICE_ID_KEYRING_USERNAME, new_id)
+    except keyring.errors.KeyringError as exc:
+        if _DEVICE_ID_FALLBACK is None:
+            _DEVICE_ID_FALLBACK = new_id
+            _log.warning(
+                "device_id_keyring_write_failed_using_fallback",
+                error=str(exc),
+                error_type=type(exc).__name__,
+            )
+        return _DEVICE_ID_FALLBACK
     return new_id
 
 
