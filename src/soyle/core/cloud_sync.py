@@ -741,6 +741,24 @@ class CloudSync:
 
         return RestoreOption(term_count=term_count, last_modified=last_modified)
 
+    async def detect_existing_config_backup(self) -> Config | None:
+        """Probe Drive App Data for config.toml. Returns the parsed Config
+        if found, else None. Used by the first-run wizard to offer
+        settings restore after OAuth completes."""
+        refresh_token = self._token_store.load()
+        if refresh_token is None:
+            return None
+        try:
+            access = await _refresh_access_token(
+                client_id=self._client_id, refresh_token=refresh_token,
+            )
+            remote_cfg, _meta = await _drive_get_config(access_token=access)
+        except (
+            OAuthAuthRevokedError, httpx.HTTPError, DriveCorruptedError,
+        ):
+            return None
+        return remote_cfg
+
     async def disconnect(self) -> None:
         """Revoke token at Google, clear keyring, reset last_synced_at.
 

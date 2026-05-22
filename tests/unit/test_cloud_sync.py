@@ -2793,3 +2793,67 @@ async def test_push_config_now_does_full_round_trip_when_connected(
 
     await cs._push_config_now()
     assert create.called
+
+
+# ---- Task 16: settings restore probe ----
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_detect_existing_config_backup_returns_none_when_drive_empty(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cs = _make_cloud_sync(tmp_path, monkeypatch)
+    cs._token_store.save("rt")
+
+    respx.post("https://oauth2.googleapis.com/token").mock(
+        return_value=httpx.Response(200, json={"access_token": "tok"}),
+    )
+    respx.get(f"{_DRIVE_API_BASE}/files").mock(
+        return_value=httpx.Response(200, json={"files": []}),
+    )
+
+    result = await cs.detect_existing_config_backup()
+    assert result is None
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_detect_existing_config_backup_returns_config_when_found(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cs = _make_cloud_sync(tmp_path, monkeypatch)
+    cs._token_store.save("rt")
+
+    body = b"version = 1\n\n[hotkey]\ncombination = \"ctrl+shift\"\n"
+
+    respx.post("https://oauth2.googleapis.com/token").mock(
+        return_value=httpx.Response(200, json={"access_token": "tok"}),
+    )
+    respx.get(f"{_DRIVE_API_BASE}/files").mock(
+        return_value=httpx.Response(200, json={
+            "files": [{"id": "F1", "name": "config.toml", "modifiedTime": "2026-05-22T10:00:00.000Z"}],
+        }),
+    )
+    respx.get(f"{_DRIVE_API_BASE}/files/F1").mock(
+        return_value=httpx.Response(200, content=body, headers={"ETag": "e"}),
+    )
+
+    result = await cs.detect_existing_config_backup()
+    assert result is not None
+    assert result.hotkey.combination == "ctrl+shift"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_detect_existing_config_backup_returns_none_on_network_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cs = _make_cloud_sync(tmp_path, monkeypatch)
+    cs._token_store.save("rt")
+
+    respx.post("https://oauth2.googleapis.com/token").mock(
+        side_effect=httpx.ConnectError("simulated"),
+    )
+
+    result = await cs.detect_existing_config_backup()
+    assert result is None
