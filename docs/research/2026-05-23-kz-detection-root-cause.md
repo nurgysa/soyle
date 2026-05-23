@@ -35,42 +35,52 @@ Hardware: NVIDIA GTX 1650 Ti (Turing without Tensor Cores), 4 GB VRAM, Söyle ru
 
 ### 2.1 faster-whisper source code
 
-File: `.venv/Lib/site-packages/faster_whisper/transcribe.py` (version installed via pyproject lockfile).
+Söyle uses `WhisperModel.transcribe()` (not the batched `BatchedInferencePipeline`). All line references below are pinned to upstream tag **v1.2.1** — the version locked in `uv.lock` and installed in `.venv`.
 
-**Lines 471–505 — language detection happens FIRST, and takes only mel features:**
-
-```python
-if language is None:
-    if not self.model.model.is_multilingual:
-        language = "en"
-        language_probability = 1
-    else:
-        (
-            language,
-            language_probability,
-            all_language_probs,
-        ) = self.model.detect_language(
-            features=np.concatenate(  # ← ONLY mel-spectrogram features
-                ...
-            )
-        )
-```
-
-**Lines 182–189 — initial_prompt is only consumed by `get_prompt()`, which feeds the DECODER (post-detection):**
+**[`WhisperModel.transcribe()` lines 938–952](https://github.com/SYSTRAN/faster-whisper/blob/v1.2.1/faster_whisper/transcribe.py#L938-L952) — language detection happens FIRST, and takes ONLY mel-spectrogram features:**
 
 ```python
-prompt = self.model.get_prompt(
-    tokenizer,                          # ← tokenizer was built from chosen language
-    previous_tokens=(
-        tokenizer.encode(options.initial_prompt)
-        if options.initial_prompt is not None
-        else []
-    ),
-    without_timestamps=options.without_timestamps,
+(
+    language,
+    language_probability,
+    all_language_probs,
+) = self.detect_language(
+    features=features[..., seek:],          # ← ONLY mel features
+    language_detection_segments=language_detection_segments,
+    language_detection_threshold=language_detection_threshold,
+)
+
+self.logger.info(
+    "Detected language '%s' with probability %.2f",
+    language,
+    language_probability,
 )
 ```
 
-The `tokenizer` itself is constructed (line 507+) using `language=<already-detected-or-forced>`. So by the time `initial_prompt` enters the picture, the language decision is locked.
+**[Lines 963–968](https://github.com/SYSTRAN/faster-whisper/blob/v1.2.1/faster_whisper/transcribe.py#L963-L968) — the tokenizer is THEN built from the chosen language, locking the decoding alphabet:**
+
+```python
+tokenizer = Tokenizer(
+    self.hf_tokenizer,
+    self.model.is_multilingual,
+    task=task,
+    language=language,                       # ← locked to whatever detection chose
+)
+```
+
+**[`WhisperModel.generate_segments()` lines 1143–1149](https://github.com/SYSTRAN/faster-whisper/blob/v1.2.1/faster_whisper/transcribe.py#L1143-L1149) — `initial_prompt` only enters here, encoded by the already-locked tokenizer:**
+
+```python
+if options.initial_prompt is not None:
+    if isinstance(options.initial_prompt, str):
+        initial_prompt = " " + options.initial_prompt.strip()
+        initial_prompt_tokens = tokenizer.encode(initial_prompt)
+        all_tokens.extend(initial_prompt_tokens)
+    else:
+        all_tokens.extend(options.initial_prompt)
+```
+
+The order is: **(1)** mel features → `detect_language()` picks a language; **(2)** `Tokenizer` is built using that language; **(3)** `initial_prompt` gets encoded via that tokenizer and prepended to the decoder's token stream. By the time `initial_prompt` enters the picture, the language decision is locked, AND the prompt text is being encoded into tokens of that language's alphabet. If detection picked `ar`, the phrase "Languages: Kazakh, Russian, English." becomes arabic-encoded tokens that further bias the decoder toward... still arabic.
 
 ### 2.2 Real-world log evidence
 
@@ -159,9 +169,12 @@ CPU + small model is the only safe fallback, but `small` has even worse KZ recog
 
 ## 8. Sources
 
-### Source code
-- [`.venv/Lib/site-packages/faster_whisper/transcribe.py:471-505`](../../.venv/Lib/site-packages/faster_whisper/transcribe.py) — `detect_language()` only takes mel features
-- [`.venv/Lib/site-packages/faster_whisper/transcribe.py:182-189`](../../.venv/Lib/site-packages/faster_whisper/transcribe.py) — `get_prompt()` only used by decoder
+### Source code (upstream faster-whisper, pinned to v1.2.1)
+- [`faster_whisper/transcribe.py:938-952` (WhisperModel.transcribe)](https://github.com/SYSTRAN/faster-whisper/blob/v1.2.1/faster_whisper/transcribe.py#L938-L952) — `detect_language()` takes only mel features
+- [`faster_whisper/transcribe.py:963-968` (WhisperModel.transcribe)](https://github.com/SYSTRAN/faster-whisper/blob/v1.2.1/faster_whisper/transcribe.py#L963-L968) — `Tokenizer` built from chosen language, locking decoding alphabet
+- [`faster_whisper/transcribe.py:1143-1149` (WhisperModel.generate_segments)](https://github.com/SYSTRAN/faster-whisper/blob/v1.2.1/faster_whisper/transcribe.py#L1143-L1149) — `initial_prompt` encoded via that already-locked tokenizer
+
+### In-repo source (this repo)
 - [`src/soyle/core/transcriber.py:206-213`](../../src/soyle/core/transcriber.py#L206) — how we call `model.transcribe()`
 - [`src/soyle/core/dictionary.py:113-128`](../../src/soyle/core/dictionary.py#L113) — `as_whisper_prompt()` with the now-known-wrong prefix
 - [`src/soyle/ui/settings.py:240-246`](../../src/soyle/ui/settings.py#L240) — original `kk` exclusion comment (still accurate)
