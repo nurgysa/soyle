@@ -1248,3 +1248,43 @@ def test_device_id_set_failure_path_also_populates_last_known(
 
     second = cs._device_id()
     assert second == first  # stable across both failure paths
+
+
+def test_device_id_set_failure_preserves_active_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When _DEVICE_ID_FALLBACK is already set from an earlier read
+    outage and the set-fail path runs with a different new_id, the
+    function must return the existing fallback AND keep the cache in
+    sync. A subsequent read failure must return the SAME fallback,
+    not the unreturned new_id from the set-fail branch."""
+    from soyle.core import cloud_sync as cs
+
+    # Simulate: earlier read failure already established _DEVICE_ID_FALLBACK
+    monkeypatch.setattr(cs, "_DEVICE_ID_FALLBACK", "fallback-A")
+    monkeypatch.setattr(cs, "_DEVICE_ID_LAST_KNOWN", None)
+
+    # First call: get_password returns None (recovered backend but empty
+    # keyring), set_password fails — the set-fail branch runs with a new_id
+    # that is NOT returned (we return the pre-existing fallback instead).
+    monkeypatch.setattr(cs.keyring, "get_password", lambda s, u: None)
+
+    def raising_set(service: str, user: str, pwd: str) -> None:
+        raise cs.keyring.errors.KeyringError("write blocked")
+
+    monkeypatch.setattr(cs.keyring, "set_password", raising_set)
+
+    first = cs._device_id()
+    assert first == "fallback-A"
+
+    # Second call: keyring fails on read — must STILL return "fallback-A",
+    # not the new_id minted (and discarded) in the set-fail path on the
+    # first call.
+    def raising_get(service: str, user: str) -> str | None:
+        raise cs.keyring.errors.KeyringError("read fail")
+
+    monkeypatch.setattr(cs.keyring, "get_password", raising_get)
+
+    second = cs._device_id()
+    assert second == "fallback-A"
+    assert second == first

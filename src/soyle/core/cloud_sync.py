@@ -332,8 +332,12 @@ def _device_id() -> str:
     try:
         keyring.set_password(_APP_NAME, _DEVICE_ID_KEYRING_USERNAME, new_id)
     except keyring.errors.KeyringError as exc:
-        # Write blocked — treat the minted ID as both fallback and
-        # last-known so a subsequent read-fail returns the same value.
+        # Write blocked — keep the cache in sync with what we return.
+        # If _DEVICE_ID_FALLBACK was already established earlier (read
+        # outage path), we return that pre-existing value; the just-minted
+        # new_id is discarded. Mirror the return value into
+        # _DEVICE_ID_LAST_KNOWN so a subsequent read failure returns the
+        # same fallback (per-session device-ID consistency).
         if _DEVICE_ID_FALLBACK is None:
             _DEVICE_ID_FALLBACK = new_id
             _log.warning(
@@ -341,7 +345,7 @@ def _device_id() -> str:
                 error=str(exc),
                 error_type=type(exc).__name__,
             )
-        _DEVICE_ID_LAST_KNOWN = new_id
+        _DEVICE_ID_LAST_KNOWN = _DEVICE_ID_FALLBACK
         return _DEVICE_ID_FALLBACK
     # Persisted successfully — also cache for read-fail recovery.
     _DEVICE_ID_LAST_KNOWN = new_id
