@@ -207,13 +207,6 @@ class ConfigStore:
         if self._push_hook is not None and not _bypass_hook:
             self._push_hook()
 
-    def reset_to_defaults(self) -> Config:
-        if self._path.exists():
-            self._backup_broken()
-        cfg = Config()
-        self._write(cfg)
-        return cfg
-
     def mtime(self) -> datetime:
         """Config file's modified time as aware UTC datetime.
 
