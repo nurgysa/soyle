@@ -29,7 +29,7 @@
 - Modify: `tests/unit/test_dictionary.py:93-99` (`test_whisper_prompt_format`)
 - Modify: `tests/unit/test_dictionary.py` (add two new tests at end)
 
-- [ ] **Step 1: Update existing assertions to expect the new prefix**
+- [x] **Step 1: Update existing assertions to expect the new prefix**
 
 In `tests/unit/test_dictionary.py`, replace `test_empty_when_missing`:
 
@@ -55,7 +55,7 @@ def test_whisper_prompt_format(store: DictionaryStore) -> None:
     assert "Astana" in prompt
 ```
 
-- [ ] **Step 2: Add two new tests at the bottom of `test_dictionary.py`**
+- [x] **Step 2: Add two new tests at the bottom of `test_dictionary.py`**
 
 Append before the final newline:
 
@@ -82,7 +82,7 @@ def test_as_whisper_prompt_languages_prefix_precedes_glossary(
     assert lang_idx < gloss_idx
 ```
 
-- [ ] **Step 3: Run tests — verify they fail**
+- [x] **Step 3: Run tests — verify they fail**
 
 Run:
 ```
@@ -91,7 +91,7 @@ Run:
 
 Expected: 4 failures (existing test assertions changed; new tests reference behavior not yet implemented).
 
-- [ ] **Step 4: Implement the change in `dictionary.py`**
+- [x] **Step 4: Implement the change in `dictionary.py`**
 
 In `src/soyle/core/dictionary.py`, replace the `as_whisper_prompt` method (around lines 113-121):
 
@@ -114,7 +114,7 @@ In `src/soyle/core/dictionary.py`, replace the `as_whisper_prompt` method (aroun
         return f"{prefix} Glossary: {', '.join(terms)}."
 ```
 
-- [ ] **Step 5: Run tests — verify they pass**
+- [x] **Step 5: Run tests — verify they pass**
 
 Run:
 ```
@@ -123,7 +123,7 @@ Run:
 
 Expected: all `test_dictionary.py` tests pass (the 4 modified/new + 18 existing = 22 passes).
 
-- [ ] **Step 6: Run mypy + ruff on changed files**
+- [x] **Step 6: Run mypy + ruff on changed files**
 
 Run:
 ```
@@ -133,7 +133,7 @@ Run:
 
 Expected: both clean.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```
 git add src/soyle/core/dictionary.py tests/unit/test_dictionary.py
@@ -163,11 +163,11 @@ EOF
 
 No tests — this is dropdown-label text only, no behavior change.
 
-- [ ] **Step 1: Read the current preset comment block to know the surrounding context**
+- [x] **Step 1: Read the current preset comment block to know the surrounding context**
 
 Look at lines 107-132 of `src/soyle/core/transcriber.py`. The four presets are `large-v3-turbo`, `large-v3`, `medium`, `small`. The current notes are KZ-aware but ambiguous about the turbo-vs-v3 trade-off.
 
-- [ ] **Step 2: Replace the WHISPER_MODELS tuple**
+- [x] **Step 2: Replace the WHISPER_MODELS tuple**
 
 Replace the existing definition (lines 107-132) with:
 
@@ -203,7 +203,7 @@ WHISPER_MODELS: tuple[WhisperModelPreset, ...] = (
 )
 ```
 
-- [ ] **Step 3: Verify imports + dropdown still work**
+- [x] **Step 3: Verify imports + dropdown still work**
 
 Run:
 ```
@@ -212,7 +212,7 @@ Run:
 
 Expected: 4 lines printed, each containing model id + params + the updated note.
 
-- [ ] **Step 4: Run full unit suite to confirm no test depended on exact note strings**
+- [x] **Step 4: Run full unit suite to confirm no test depended on exact note strings**
 
 Run:
 ```
@@ -221,7 +221,7 @@ Run:
 
 Expected: same pass count as Task 1 (no regressions).
 
-- [ ] **Step 5: Ruff + mypy**
+- [x] **Step 5: Ruff + mypy**
 
 Run:
 ```
@@ -231,7 +231,7 @@ Run:
 
 Expected: both clean.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```
 git add src/soyle/core/transcriber.py
@@ -258,7 +258,7 @@ EOF
 **Files:**
 - Modify: `src/soyle/ui/settings.py:247-253` (Whisper tab language section)
 
-- [ ] **Step 1: Read the current language-dropdown block to confirm structure**
+- [x] **Step 1: Read the current language-dropdown block to confirm structure**
 
 Lines 247-253 of `src/soyle/ui/settings.py`:
 
@@ -274,7 +274,7 @@ Lines 247-253 of `src/soyle/ui/settings.py`:
 
 Note: `kk` is intentionally not in the dropdown (see the existing comment at lines 240-246 about GTX 16-series GPU hangs).
 
-- [ ] **Step 2: Add the hint QLabel under the dropdown**
+- [x] **Step 2: Add the hint QLabel under the dropdown**
 
 Replace the block above with:
 
@@ -302,7 +302,7 @@ Replace the block above with:
         layout.addRow("", self._w_language_hint)
 ```
 
-- [ ] **Step 3: Smoke-test imports and Qt construction**
+- [x] **Step 3: Smoke-test imports and Qt construction**
 
 Run:
 ```
@@ -311,7 +311,7 @@ Run:
 
 Expected: `settings imports OK` printed, no Qt errors.
 
-- [ ] **Step 4: Run full unit suite (settings has its own tests indirectly via floating_button etc.)**
+- [x] **Step 4: Run full unit suite (settings has its own tests indirectly via floating_button etc.)**
 
 Run:
 ```
@@ -320,7 +320,7 @@ Run:
 
 Expected: same pass count, no regressions.
 
-- [ ] **Step 5: mypy + ruff**
+- [x] **Step 5: mypy + ruff**
 
 Run:
 ```
@@ -330,7 +330,7 @@ Run:
 
 Expected: both clean.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```
 git add src/soyle/ui/settings.py
@@ -357,14 +357,14 @@ EOF
 **Files:**
 - Modify: `src/soyle/prompts/polish_v1.md` (lines 67-81 — the three draft KZ examples + the TODO comment block; also Rule 4 at lines 28-33)
 
-- [ ] **Step 1: Read the file end-to-end to confirm current structure**
+- [x] **Step 1: Read the file end-to-end to confirm current structure**
 
 Open `src/soyle/prompts/polish_v1.md` and observe:
 - Rules 1-8 (lines 9-46)
 - Input/Output format spec (lines 48-54)
 - Examples block (lines 56-84) with the `TODO(prompt-tuning)` HTML comment at lines 76-81 admitting the 3 KZ examples are drafts.
 
-- [ ] **Step 2: Update Rule 4 to add the explicit anti-normalize anti-pattern**
+- [x] **Step 2: Update Rule 4 to add the explicit anti-normalize anti-pattern**
 
 Replace Rule 4 (lines 28-33 in the existing file) with:
 
@@ -382,7 +382,7 @@ Replace Rule 4 (lines 28-33 in the existing file) with:
    RU words as RU, not retranslate them into KZ.
 ```
 
-- [ ] **Step 3: Replace the three KZ examples + remove the TODO comment**
+- [x] **Step 3: Replace the three KZ examples + remove the TODO comment**
 
 Replace lines 67-81 (the three KZ example blocks plus the `TODO(prompt-tuning)` HTML comment) with:
 
@@ -399,7 +399,7 @@ Output: Бұл feature-ды staging-ке push етіп қойдым кеше.
 
 The replacement removes the HTML comment block entirely and substitutes three realistic KZ-dominant tech-speech examples that demonstrate: (a) filler stripping (`анау мынау`, `сонымен`, `ну сосын`), (b) KZ-suffix preservation on EN stems (`PR-ды`, `feature-ды`, `staging-ке`), (c) one example with no edits needed (model learns "don't fix what isn't broken").
 
-- [ ] **Step 4: Sanity-load the prompt via PostProcess**
+- [x] **Step 4: Sanity-load the prompt via PostProcess**
 
 Run:
 ```
@@ -408,7 +408,7 @@ Run:
 
 Expected: `polish loaded, length: <integer ≈ 2300-3000>`. No exceptions.
 
-- [ ] **Step 5: Verify the TODO marker is gone**
+- [x] **Step 5: Verify the TODO marker is gone**
 
 Run:
 ```
@@ -417,7 +417,7 @@ Run:
 
 Expected: `TODO marker removed`.
 
-- [ ] **Step 6: Run unit tests (no prompt-content assertions exist, so this is a safety net)**
+- [x] **Step 6: Run unit tests (no prompt-content assertions exist, so this is a safety net)**
 
 Run:
 ```
@@ -426,7 +426,7 @@ Run:
 
 Expected: all postprocess tests pass.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```
 git add src/soyle/prompts/polish_v1.md
@@ -455,7 +455,7 @@ EOF
 **Files:**
 - Modify: `src/soyle/prompts/ai_prompt_v1.md` (Rule 2 at lines 28-31; examples block at lines 67-91 — the TODO comment too)
 
-- [ ] **Step 1: Tighten Rule 2 with the same anti-normalize anti-pattern**
+- [x] **Step 1: Tighten Rule 2 with the same anti-normalize anti-pattern**
 
 Replace Rule 2 (current lines 28-31):
 
@@ -469,7 +469,7 @@ Replace Rule 2 (current lines 28-31):
    the prompt. Mixed KZ+RU+EN instructions must stay mixed.
 ```
 
-- [ ] **Step 2: Add a realistic KZ AI-prompt example and remove the TODO comment**
+- [x] **Step 2: Add a realistic KZ AI-prompt example and remove the TODO comment**
 
 Replace lines 67-91 (the existing 3 EN/RU examples + the entire `TODO(prompt-tuning)` block) with:
 
@@ -494,7 +494,7 @@ Output: Осы файлды оқып шығып, негізгі баг-тард�
 
 The new KZ examples show: (a) instruction-mode conversion ("айтшы…жаз" → imperative "жаз"), (b) preserving English tokens (`CSV`, `Python`, `type hints`) with KZ suffixes intact (`-ды`, `-да`), (c) one example where the speaker explicitly demands KZ output ("KZ-да жаз") — the model must respect that, not silently default to RU.
 
-- [ ] **Step 3: Sanity-load**
+- [x] **Step 3: Sanity-load**
 
 Run:
 ```
@@ -503,7 +503,7 @@ Run:
 
 Expected: `ai_prompt OK`.
 
-- [ ] **Step 4: Run postprocess unit tests**
+- [x] **Step 4: Run postprocess unit tests**
 
 Run:
 ```
@@ -512,7 +512,7 @@ Run:
 
 Expected: all pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```
 git add src/soyle/prompts/ai_prompt_v1.md
@@ -539,7 +539,7 @@ EOF
 **Files:**
 - Modify: `src/soyle/prompts/rewrite_v1.md` (Rule 1 at lines 18-21; examples + TODO at lines 83-97)
 
-- [ ] **Step 1: Tighten Rule 1**
+- [x] **Step 1: Tighten Rule 1**
 
 Replace Rule 1 (lines 18-21):
 
@@ -554,7 +554,7 @@ Replace Rule 1 (lines 18-21):
    in Kazakh — same vocabulary, just better structure.
 ```
 
-- [ ] **Step 2: Replace the three KZ rewrite examples and remove the TODO comment**
+- [x] **Step 2: Replace the three KZ rewrite examples and remove the TODO comment**
 
 Replace lines 83-97 (three KZ examples + the entire `TODO(prompt-tuning)` block) with:
 
@@ -571,7 +571,7 @@ Output: Ертең meeting бар. Ертеңге дейін deck-ті дайы�
 
 The new examples demonstrate: (a) reordering preserves KZ-dominant flow + keeps EN/RU words in their original language (`механический`, `keyboard`, `meeting`, `deck`, `talk through`), (b) merging two fragments into one sentence without language collapse, (c) the third example explicitly stresses-tests the "rewrite" verb on a mixed KZ+EN string.
 
-- [ ] **Step 3: Sanity-load**
+- [x] **Step 3: Sanity-load**
 
 Run:
 ```
@@ -580,7 +580,7 @@ Run:
 
 Expected: `rewrite OK`.
 
-- [ ] **Step 4: Run postprocess tests**
+- [x] **Step 4: Run postprocess tests**
 
 Run:
 ```
@@ -589,7 +589,7 @@ Run:
 
 Expected: all pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```
 git add src/soyle/prompts/rewrite_v1.md
@@ -616,7 +616,7 @@ EOF
 **Files:**
 - Modify: `src/soyle/prompts/plain_text_v1.md` (Rule 1 at lines 22-23; examples + TODO at lines 72-95)
 
-- [ ] **Step 1: Tighten Rule 1**
+- [x] **Step 1: Tighten Rule 1**
 
 Replace Rule 1 (lines 22-23):
 
@@ -630,7 +630,7 @@ Replace Rule 1 (lines 22-23):
    language for "readability".
 ```
 
-- [ ] **Step 2: Replace examples and remove the TODO comment**
+- [x] **Step 2: Replace examples and remove the TODO comment**
 
 Replace lines 72-95 (the existing 3 examples + the entire `TODO(prompt-tuning)` block) with:
 
@@ -655,7 +655,7 @@ Output: Бұл хабарламаны Айгүлге де жібер; Серік
 
 The new KZ examples demonstrate: (a) casual chat-message KZ that stays casual (Slack/Telegram tone), (b) merging fragmented KZ sentences with proper Kazakh-style punctuation (semicolon, em-dash), without translating English tokens (`staging`, `testing`).
 
-- [ ] **Step 3: Sanity-load**
+- [x] **Step 3: Sanity-load**
 
 Run:
 ```
@@ -664,7 +664,7 @@ Run:
 
 Expected: `plain_text OK`.
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 ```
 .venv/Scripts/pytest.exe tests/unit/test_postprocess.py -q
@@ -672,7 +672,7 @@ Expected: `plain_text OK`.
 
 Expected: all pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```
 git add src/soyle/prompts/plain_text_v1.md
@@ -699,7 +699,7 @@ EOF
 **Files:**
 - Modify: `src/soyle/prompts/task_v1.md` (Rule 1 at lines 23-25; examples + TODO at lines 126-151)
 
-- [ ] **Step 1: Tighten Rule 1 (free-text fields stay in source language)**
+- [x] **Step 1: Tighten Rule 1 (free-text fields stay in source language)**
 
 Replace Rule 1 (lines 23-25):
 
@@ -715,7 +715,7 @@ Replace Rule 1 (lines 23-25):
    but the values they hold preserve the input's language.
 ```
 
-- [ ] **Step 2: Add a KZ-dominant structured-task example, replace the TODO block**
+- [x] **Step 2: Add a KZ-dominant structured-task example, replace the TODO block**
 
 Replace lines 126-151 (the last existing example + the TODO comment) with:
 
@@ -753,7 +753,7 @@ Output:
 
 The new KZ examples show: (a) KZ word "шұғыл" mapped to P0 (already in priority cues line 32), (b) KZ-dominant "Описание" stays KZ — labels stay RU, (c) priority and department inference work even when the cue word is Kazakh.
 
-- [ ] **Step 3: Sanity-load**
+- [x] **Step 3: Sanity-load**
 
 Run:
 ```
@@ -762,7 +762,7 @@ Run:
 
 Expected: `task OK`.
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 ```
 .venv/Scripts/pytest.exe tests/unit/test_postprocess.py -q
@@ -770,7 +770,7 @@ Expected: `task OK`.
 
 Expected: all pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```
 git add src/soyle/prompts/task_v1.md
@@ -797,7 +797,7 @@ EOF
 **Files:**
 - Modify: `docs/MANUAL_TESTS.md` (insert new section before existing "Stability" section)
 
-- [ ] **Step 1: Insert the new section**
+- [x] **Step 1: Insert the new section**
 
 In `docs/MANUAL_TESTS.md`, immediately before the existing `## Cloud Sync (Phase 1)` heading (line ~58 — find it via grep), insert this new section:
 
@@ -861,7 +861,7 @@ In `docs/MANUAL_TESTS.md`, immediately before the existing `## Cloud Sync (Phase
 
 ```
 
-- [ ] **Step 2: Verify the section is in the right place**
+- [x] **Step 2: Verify the section is in the right place**
 
 Run:
 ```
@@ -870,7 +870,7 @@ Run:
 
 Expected: `section order OK`.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```
 git add docs/MANUAL_TESTS.md
@@ -894,7 +894,7 @@ EOF
 
 **Files:** none directly — this is a verification + push task.
 
-- [ ] **Step 1: Run the full unit suite**
+- [x] **Step 1: Run the full unit suite**
 
 ```
 .venv/Scripts/pytest.exe tests/unit/ -q
@@ -902,7 +902,7 @@ EOF
 
 Expected: 247/247 pass (245 existing + 2 new in `test_dictionary.py`).
 
-- [ ] **Step 2: Mypy clean across all source files**
+- [x] **Step 2: Mypy clean across all source files**
 
 ```
 .venv/Scripts/python.exe -m mypy src/
@@ -910,7 +910,7 @@ Expected: 247/247 pass (245 existing + 2 new in `test_dictionary.py`).
 
 Expected: `Success: no issues found in 30 source files`.
 
-- [ ] **Step 3: Ruff clean on the entire source tree**
+- [x] **Step 3: Ruff clean on the entire source tree**
 
 ```
 .venv/Scripts/ruff.exe check src/ tests/
@@ -918,7 +918,7 @@ Expected: `Success: no issues found in 30 source files`.
 
 Expected: `All checks passed!`.
 
-- [ ] **Step 4: Import smoke test**
+- [x] **Step 4: Import smoke test**
 
 ```
 .venv/Scripts/python.exe -c "from soyle.app import SoyleApp; from soyle.ui.settings import SettingsWindow; from soyle.core.dictionary import DictionaryStore; ds = DictionaryStore(); print('imports OK; sample whisper prompt:', repr(ds.as_whisper_prompt()))"
@@ -926,7 +926,7 @@ Expected: `All checks passed!`.
 
 Expected: `imports OK; sample whisper prompt: 'Languages: Kazakh, Russian, English.'` (or similar — should at minimum start with `Languages:`).
 
-- [ ] **Step 5: Run manual sections E + F locally (the pre-merge gate from spec)**
+- [x] **Step 5: Run manual sections E + F locally (the pre-merge gate from spec)**
 
 This is the explicit regression check from the spec for R1. Before pushing:
 - Dictate "Привет это тестовая фраза" — verify Whisper still recognises pure-RU cleanly.
@@ -934,7 +934,7 @@ This is the explicit regression check from the spec for R1. Before pushing:
 
 If either regresses noticeably, STOP. Investigate before merging — likely root cause is that the `Languages:` prefix is biasing auto-detect too strongly. Mitigation options: re-order the hint (`English, Russian, Kazakh`), or make it conditional on dictionary content.
 
-- [ ] **Step 6: Push the branch**
+- [x] **Step 6: Push the branch**
 
 ```
 git push origin claude/kz-codeswitching-spec
@@ -942,7 +942,7 @@ git push origin claude/kz-codeswitching-spec
 
 Note: the branch already exists from the spec PR. This pushes the new commits on top.
 
-- [ ] **Step 7: Open or update the PR**
+- [x] **Step 7: Open or update the PR**
 
 If the spec PR (#22) is still open and unmerged, the new commits stack on top automatically — visible in the existing PR. Update the PR description to include the new commits.
 
@@ -973,7 +973,7 @@ EOF
 )"
 ```
 
-- [ ] **Step 8: Wait for codex review + CI; address P1/P2 comments in a follow-up commit on the same branch**
+- [x] **Step 8: Wait for codex review + CI; address P1/P2 comments in a follow-up commit on the same branch**
 
 Per the `codex_bot_feedback_pattern` memory: codex P2+ findings get a follow-up commit before the next plan task. For this plan there is no "next plan task" — the PR is the deliverable.
 
