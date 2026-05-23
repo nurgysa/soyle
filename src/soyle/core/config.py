@@ -194,10 +194,17 @@ class ConfigStore:
             self._write(cfg)
             return cfg
 
-    def save(self, config: Config) -> None:
+    def save(self, config: Config, *, _bypass_hook: bool = False) -> None:
+        """Persist `config` to disk.
+
+        If a push hook is registered, fire it after the write — unless
+        `_bypass_hook=True` (used by internal sync metadata writes like
+        `last_synced_at` updates to avoid an infinite debounced-push
+        loop; see codex P1 fix on PR #30).
+        """
         self._ensure_parent()
         self._write(config)
-        if self._push_hook is not None:
+        if self._push_hook is not None and not _bypass_hook:
             self._push_hook()
 
     def reset_to_defaults(self) -> Config:

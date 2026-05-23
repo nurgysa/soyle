@@ -2651,8 +2651,8 @@ async def test_sync_config_caps_412_retries_at_max_sync_retries(
             headers={"ETag": "stale"},
         ),
     )
-    # Wait — remote_newer path takes pull, not push. Force local-newer:
-    # touch the local config file so its mtime is far in the future.
+    # Force local-newer: touch the local config file so its mtime
+    # is far in the future, which routes through the push path.
     import os
     import time
     far_future = time.time() + 7200  # 2h ahead
@@ -2704,3 +2704,219 @@ async def test_sync_usage_caps_412_retries_at_max_sync_retries(
 
     assert result.outcome.name == "NETWORK"
     assert patch_route.call_count == MAX_SYNC_RETRIES
+
+
+# ---- Task 14: schedule_config_push + QTimer debounce ----
+
+
+@pytest.fixture
+def qapp():
+    """Headless Qt app for QTimer tests. PySide6 requires a QApplication
+    instance for QTimer to fire."""
+    from PySide6.QtWidgets import QApplication
+    app = QApplication.instance() or QApplication([])
+    yield app
+
+
+def test_schedule_config_push_starts_qtimer_with_8s_interval(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, qapp,
+) -> None:
+    cs = _make_cloud_sync(tmp_path, monkeypatch)
+    cs.schedule_config_push()
+
+    timer = cs._config_push_timer
+    assert timer.isActive()
+    assert timer.interval() == 8000
+
+
+def test_schedule_config_push_resets_timer_on_rapid_calls(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, qapp,
+) -> None:
+    """Second call within debounce window restarts the timer at full 8s."""
+    cs = _make_cloud_sync(tmp_path, monkeypatch)
+    cs.schedule_config_push()
+
+    timer = cs._config_push_timer
+    cs.schedule_config_push()
+    assert timer.isActive()
+    assert timer.interval() == 8000
+
+
+def test_schedule_config_push_silent_when_not_connected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, qapp,
+) -> None:
+    """Hook still arms the timer; the actual push checks is_connected
+    when the timer fires. This test asserts arming is unconditional."""
+    cs = _make_cloud_sync(tmp_path, monkeypatch)
+    # Not connected (no token in keyring) — schedule_config_push still arms
+    cs.schedule_config_push()
+    assert cs._config_push_timer.isActive()
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_push_config_now_skips_when_not_connected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, qapp,
+) -> None:
+    """When _push_config_now fires but keyring is empty, return silently."""
+    # Stub keyring so the real Windows Credential Manager is never consulted.
+    monkeypatch.setattr(
+        "soyle.core.cloud_sync.keyring.get_password",
+        lambda _service, _user: None,
+    )
+    cs = _make_cloud_sync(tmp_path, monkeypatch)
+    drive_get = respx.get(f"{_DRIVE_API_BASE}/files").mock(
+        return_value=httpx.Response(200, json={"files": []}),
+    )
+    await cs._push_config_now()
+    assert not drive_get.called
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_push_config_now_does_full_round_trip_when_connected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, qapp,
+) -> None:
+    cs = _make_cloud_sync(tmp_path, monkeypatch)
+    cs._token_store.save("rt")
+    cs._config_store.load()
+
+    respx.post("https://oauth2.googleapis.com/token").mock(
+        return_value=httpx.Response(200, json={"access_token": "tok"}),
+    )
+    respx.get(f"{_DRIVE_API_BASE}/files").mock(
+        return_value=httpx.Response(200, json={"files": []}),
+    )
+    create = respx.post(f"{_DRIVE_UPLOAD_BASE}/files").mock(
+        return_value=httpx.Response(200, json={"id": "X"}),
+    )
+
+    await cs._push_config_now()
+    assert create.called
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_push_config_now_does_not_rearm_debounce_timer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, qapp,
+) -> None:
+    """Codex P1 fix on PR #30: a successful debounced push updates
+    last_synced_at via config_store.save(...), and that save must NOT
+    fire the push hook — otherwise every successful _push_config_now
+    schedules another timer tick, creating an endless ~8s sync loop."""
+    cs = _make_cloud_sync(tmp_path, monkeypatch)
+    cs._token_store.save("rt")
+    cs._config_store.load()
+
+    # Register the real push hook (mirrors what app.py wires)
+    cs._config_store.set_push_hook(cs.schedule_config_push)
+
+    respx.post("https://oauth2.googleapis.com/token").mock(
+        return_value=httpx.Response(200, json={"access_token": "tok"}),
+    )
+    respx.get(f"{_DRIVE_API_BASE}/files").mock(
+        return_value=httpx.Response(200, json={"files": []}),
+    )
+    respx.post(f"{_DRIVE_UPLOAD_BASE}/files").mock(
+        return_value=httpx.Response(200, json={"id": "X"}),
+    )
+
+    # Before: timer not armed
+    assert not cs._config_push_timer.isActive()
+
+    await cs._push_config_now()
+
+    # After: timer still NOT armed — sync metadata write bypassed the hook
+    assert not cs._config_push_timer.isActive()
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_sync_now_does_not_rearm_debounce_timer_on_success(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, qapp,
+) -> None:
+    """Same contract on the daily sync_now path: a successful scheduled
+    sync writes last_synced_at to disk; that write must NOT re-arm the
+    debounced push or every daily sync schedules an immediate push."""
+    cs = _make_cloud_sync(tmp_path, monkeypatch)
+    cs._token_store.save("rt")
+    cs._config_store.load()
+    cs._config_store.set_push_hook(cs.schedule_config_push)
+
+    respx.post("https://oauth2.googleapis.com/token").mock(
+        return_value=httpx.Response(200, json={"access_token": "tok"}),
+    )
+    respx.get(f"{_DRIVE_API_BASE}/files").mock(
+        return_value=httpx.Response(200, json={"files": []}),
+    )
+    respx.post(f"{_DRIVE_UPLOAD_BASE}/files").mock(
+        return_value=httpx.Response(200, json={"id": "X"}),
+    )
+
+    assert not cs._config_push_timer.isActive()
+    await cs.sync_now()
+    assert not cs._config_push_timer.isActive()
+
+
+# ---- Task 16: settings restore probe ----
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_detect_existing_config_backup_returns_none_when_drive_empty(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cs = _make_cloud_sync(tmp_path, monkeypatch)
+    cs._token_store.save("rt")
+
+    respx.post("https://oauth2.googleapis.com/token").mock(
+        return_value=httpx.Response(200, json={"access_token": "tok"}),
+    )
+    respx.get(f"{_DRIVE_API_BASE}/files").mock(
+        return_value=httpx.Response(200, json={"files": []}),
+    )
+
+    result = await cs.detect_existing_config_backup()
+    assert result is None
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_detect_existing_config_backup_returns_config_when_found(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cs = _make_cloud_sync(tmp_path, monkeypatch)
+    cs._token_store.save("rt")
+
+    body = b"version = 1\n\n[hotkey]\ncombination = \"ctrl+shift\"\n"
+
+    respx.post("https://oauth2.googleapis.com/token").mock(
+        return_value=httpx.Response(200, json={"access_token": "tok"}),
+    )
+    respx.get(f"{_DRIVE_API_BASE}/files").mock(
+        return_value=httpx.Response(200, json={
+            "files": [{"id": "F1", "name": "config.toml", "modifiedTime": "2026-05-22T10:00:00.000Z"}],
+        }),
+    )
+    respx.get(f"{_DRIVE_API_BASE}/files/F1").mock(
+        return_value=httpx.Response(200, content=body, headers={"ETag": "e"}),
+    )
+
+    result = await cs.detect_existing_config_backup()
+    assert result is not None
+    assert result.hotkey.combination == "ctrl+shift"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_detect_existing_config_backup_returns_none_on_network_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cs = _make_cloud_sync(tmp_path, monkeypatch)
+    cs._token_store.save("rt")
+
+    respx.post("https://oauth2.googleapis.com/token").mock(
+        side_effect=httpx.ConnectError("simulated"),
+    )
+
+    result = await cs.detect_existing_config_backup()
+    assert result is None

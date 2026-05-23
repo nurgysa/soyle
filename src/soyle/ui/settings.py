@@ -349,6 +349,18 @@ class SettingsWindow(QMainWindow):
         w = QWidget()
         layout = QVBoxLayout(w)
 
+        _cs_desc = QLabel(
+            "Синхронизация словаря, настроек и истории usage через Google Drive.\n"
+            "Запускается ежедневно при старте Söyle; изменения настроек уходят\n"
+            "сразу же (с задержкой ~8 секунд). Поля привязанные к железу\n"
+            "(микрофон, модель Whisper, тема) остаются локальными."
+        )
+        _cs_desc.setWordWrap(True)
+        _cs_desc.setStyleSheet("color: #888; font-size: 11px;")
+        layout.addWidget(_cs_desc)
+
+        layout.addSpacing(8)
+
         self._cs_status_label = QLabel(self._cloud_sync_status_text())
         layout.addWidget(self._cs_status_label)
 
@@ -413,33 +425,87 @@ class SettingsWindow(QMainWindow):
         )
         QThreadPool.globalInstance().start(runnable)
 
-    async def _connect_and_maybe_restore(self) -> RestoreOption | None:
+    async def _connect_and_maybe_restore(
+        self,
+    ) -> tuple[RestoreOption | None, Config | None]:
         assert self._cloud_sync is not None  # button hidden when None
         await self._cloud_sync.begin_oauth_flow()
         await self._cloud_sync.complete_oauth_flow()
-        return await self._cloud_sync.detect_existing_backup()
+        dict_option = await self._cloud_sync.detect_existing_backup()
+        remote_cfg = await self._cloud_sync.detect_existing_config_backup()
+        return dict_option, remote_cfg
 
-    def _on_connect_done(self, result: RestoreOption | None) -> None:
-        """Main-thread slot — refresh UI, optionally show restore prompt."""
+    def _on_connect_done(
+        self, result: tuple[RestoreOption | None, Config | None] | RestoreOption | None,
+    ) -> None:
+        """Main-thread slot — refresh UI, optionally show restore prompts."""
         self._refresh_cloud_sync_buttons()
         self._cs_status_label.setText(self._cloud_sync_status_text())
-        if result is None:
+
+        # Unpack: result is now a (dict_option, remote_cfg) tuple.
+        # Guard against legacy callers passing RestoreOption | None directly.
+        if isinstance(result, tuple):
+            dict_option, remote_cfg = result
+        else:
+            dict_option, remote_cfg = result, None
+
+        if dict_option is None and remote_cfg is None:
             self._toast(
                 "Söyle — Cloud Sync", "Подключено. Backup начнётся автоматически.",
             )
             return
-        box = QMessageBox(self)
-        box.setWindowTitle("Söyle — найден backup")
-        box.setText(
-            f"В Google Drive найден backup словаря: {result.term_count} терминов "
-            f"(обновлён {result.last_modified.strftime('%Y-%m-%d')}).\n\n"
-            f"Объединить с локальным словарём сейчас?"
-        )
-        box.setStandardButtons(
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        )
-        if box.exec() == QMessageBox.StandardButton.Yes:
-            self._on_cloud_sync_sync_now()
+
+        # --- Dict restore prompt (Phase 1) ---
+        if dict_option is not None:
+            box = QMessageBox(self)
+            box.setWindowTitle("Söyle — найден backup")
+            box.setText(
+                f"В Google Drive найден backup словаря: {dict_option.term_count} терминов "
+                f"(обновлён {dict_option.last_modified.strftime('%Y-%m-%d')}).\n\n"
+                f"Объединить с локальным словарём сейчас?"
+            )
+            box.setStandardButtons(
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+            if box.exec() == QMessageBox.StandardButton.Yes:
+                self._on_cloud_sync_sync_now()
+
+        # --- Settings restore prompt (Phase 2) ---
+        if remote_cfg is not None:
+            from datetime import UTC, datetime
+            from datetime import timedelta as _td
+
+            from soyle.core.cloud_sync import _merge_config
+
+            response = QMessageBox.question(
+                self,
+                "Söyle — настройки с другого устройства",
+                "Найдены настройки с другого устройства. Применить?\n"
+                "(Локальные значения для микрофона, модели Whisper и темы\n"
+                "оформления останутся как есть.)",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.Yes,
+            )
+            if response == QMessageBox.StandardButton.Yes:
+                local_cfg = self._store.load()
+                local_mtime = self._store.mtime()
+                # Force remote to win regardless of mtime — user clicked Yes.
+                far_future = datetime.now(UTC) + _td(days=365)
+                merged = _merge_config(
+                    local_cfg, remote_cfg, local_mtime, far_future,
+                )
+                self._store.apply_synced_overrides(merged)
+                # Codex P1 fix on PR #30: reload self._cfg so any pending
+                # _save() does NOT overwrite the just-restored values with
+                # stale widget state, and close the window so the next
+                # open() repopulates widgets from disk.
+                self._cfg = self._store.load()
+                self._toast(
+                    "Söyle — Cloud Sync",
+                    "Настройки с другого устройства применены. "
+                    "Открой Settings заново, чтобы увидеть значения.",
+                )
+                self.close()
 
     def _on_cloud_sync_sync_now(self) -> None:
         if self._cloud_sync is None:

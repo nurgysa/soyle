@@ -383,3 +383,35 @@ def test_save_does_not_invoke_push_hook_when_not_registered(
 
     reloaded = ConfigStore(config_path=tmp_path / "config.toml").load()
     assert reloaded.hotkey.combination == "ctrl+alt"
+
+
+def test_save_bypass_hook_skips_registered_hook(tmp_path: Path) -> None:
+    """Codex P1 fix on PR #30: internal sync-metadata writes pass
+    _bypass_hook=True so they don't re-arm the debounced push timer."""
+    store = ConfigStore(config_path=tmp_path / "config.toml")
+    calls: list[int] = []
+    store.set_push_hook(lambda: calls.append(1))
+
+    cfg = store.load()
+    cfg.hotkey.combination = "ctrl+alt"
+    store.save(cfg, _bypass_hook=True)
+
+    assert calls == []  # hook NOT fired
+    # On-disk write still happened
+    reloaded = ConfigStore(config_path=tmp_path / "config.toml").load()
+    assert reloaded.hotkey.combination == "ctrl+alt"
+
+
+def test_save_bypass_hook_is_per_call_not_sticky(tmp_path: Path) -> None:
+    """The bypass is per-call, not a global mode — a subsequent regular
+    save() still fires the hook."""
+    store = ConfigStore(config_path=tmp_path / "config.toml")
+    calls: list[int] = []
+    store.set_push_hook(lambda: calls.append(1))
+
+    cfg = store.load()
+    store.save(cfg, _bypass_hook=True)   # bypassed
+    store.save(cfg)                       # not bypassed
+    store.save(cfg, _bypass_hook=True)   # bypassed again
+
+    assert calls == [1]  # exactly one regular save fired the hook
