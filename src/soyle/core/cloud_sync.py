@@ -27,11 +27,12 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from http.server import BaseHTTPRequestHandler
 from queue import Empty, Queue
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 from urllib.parse import parse_qs, urlencode, urlparse
 
 if TYPE_CHECKING:
     from soyle.core.config import Config
+    from soyle.core.usage import UsageTracker
 
 import httpx
 import keyring
@@ -476,6 +477,11 @@ def _merge_usage(
 SYNC_INTERVAL = timedelta(hours=24)
 MAX_SYNC_RETRIES = 3  # cap on 412 (concurrent-write) retries per sync_now()
 
+# Clock-skew tolerance for mtime comparisons (seconds). Within this window
+# we treat local and remote as already in sync — prevents push/pull
+# ping-pong when two devices have slightly drifting clocks.
+_MTIME_SKEW_SECONDS = 5
+
 # Marker substring shipped in app.py's _GOOGLE_CLIENT_ID before a real GCP
 # Desktop OAuth Client ID is plugged in. Used by is_configured for fail-fast
 # guarding (codex P1 follow-up on PR #16) — without this, begin_oauth_flow
@@ -516,6 +522,25 @@ class RestoreOption:
     last_modified: datetime
 
 
+# Outcome severity for sync_now aggregation. Higher index = worse.
+# Order: anything where we know we tried beats "didn't try"; auth_revoked
+# at the top because it tells the user "you need to act now".
+_OUTCOME_SEVERITY: dict[SyncOutcome, int] = {
+    SyncOutcome.OK: 0,
+    SyncOutcome.NOT_CONNECTED: 1,
+    SyncOutcome.NETWORK: 2,
+    SyncOutcome.QUOTA: 3,
+    SyncOutcome.UNEXPECTED: 4,
+    SyncOutcome.APP_SUSPENDED: 5,
+    SyncOutcome.AUTH_REVOKED: 6,
+}
+
+
+def _worst_outcome(*outcomes: SyncOutcome) -> SyncOutcome:
+    """Return the outcome with the highest severity."""
+    return max(outcomes, key=lambda o: _OUTCOME_SEVERITY[o])
+
+
 class CloudSync:
     """Coordinator for Google Drive sync of dictionary.toml.
 
@@ -527,10 +552,12 @@ class CloudSync:
         *,
         dict_store: DictionaryStore,
         config_store: ConfigStore,
+        usage_tracker: UsageTracker,
         client_id: str,
     ) -> None:
         self._dict_store = dict_store
         self._config_store = config_store
+        self._usage_tracker = usage_tracker
         self._client_id = client_id
         self._token_store = _TokenStore()
         self._oauth_listener: _OAuthCallbackListener | None = None
@@ -751,7 +778,48 @@ class CloudSync:
 
         return await self._sync_with_token(access)
 
-    async def _sync_with_token(self, access: str, _attempt: int = 0) -> SyncResult:
+    async def _sync_with_token(self, access: str) -> SyncResult:
+        """Run dict + config + usage in sequence; aggregate worst outcome.
+
+        Each phase is independently fallible: per spec §6.1 we don't
+        stop the loop on partial failure — a corrupted usage file
+        shouldn't prevent the dictionary from syncing.
+        """
+        dict_result = await self._sync_dictionary(access)
+        config_result = await self._sync_config(access_token=access)
+        usage_result = await self._sync_usage(access_token=access)
+
+        worst = _worst_outcome(
+            dict_result.outcome,
+            config_result.outcome,
+            usage_result.outcome,
+        )
+
+        # Stamp last_synced_at only on full success — partial failures
+        # (NETWORK/QUOTA/UNEXPECTED) must NOT advance the schedule, or
+        # the next 24h sync gets suppressed despite still needing retry.
+        # AUTH_REVOKED is handled earlier in sync_now() and never reaches
+        # here, but listing it as a non-OK outcome documents intent.
+        # Per codex P1 review on PR #29.
+        if worst == SyncOutcome.OK:
+            cfg = self._config_store.load()
+            cfg.cloud_sync.last_synced_at = datetime.now(UTC)
+            self._config_store.save(cfg)
+
+        _log.info(
+            "cloud_sync_round_trip_done",
+            dict=dict_result.outcome.name,
+            config=config_result.outcome.name,
+            usage=usage_result.outcome.name,
+            worst=worst.name,
+        )
+        return SyncResult(
+            outcome=worst,
+            added_local=dict_result.added_local,
+            added_remote=dict_result.added_remote,
+        )
+
+    async def _sync_dictionary(self, access: str, _attempt: int = 0) -> SyncResult:
         # Read remote (and look up file_id for the eventual write).
         try:
             remote, etag = await _drive_get_dictionary(access_token=access)
@@ -801,17 +869,13 @@ class CloudSync:
                 _log.info(
                     "cloud_sync_concurrent_write_detected", attempt=_attempt + 1,
                 )
-                return await self._sync_with_token(access, _attempt + 1)
+                return await self._sync_dictionary(access, _attempt + 1)
             except (httpx.ConnectError, httpx.ReadError, httpx.TimeoutException):
                 _log.warning("cloud_sync_network_error", phase="drive_put")
                 return SyncResult(outcome=SyncOutcome.NETWORK)
             except httpx.HTTPStatusError as exc:
                 return self._classify_drive_error(exc, phase="drive_put")
 
-        # Stamp success.
-        cfg = self._config_store.load()
-        cfg.cloud_sync.last_synced_at = datetime.now(UTC)
-        self._config_store.save(cfg)
         _log.info(
             "cloud_sync_ok",
             added_local=added_local,
@@ -844,6 +908,227 @@ class CloudSync:
             return None
         file_id: str = files[0]["id"]
         return file_id
+
+    async def _sync_config(
+        self, access_token: str, _attempt: int = 0,
+    ) -> SyncResult:
+        """Single round-trip for config.toml — pulls or pushes by mtime.
+
+        `_attempt` is incremented by `_push_config` on every 412 retry so
+        sustained multi-device write contention cannot recurse past
+        MAX_SYNC_RETRIES (mirrors Phase 1 dictionary sync; codex P2 fix).
+        """
+        local_cfg = self._config_store.load()
+        try:
+            local_mtime = self._config_store.mtime()
+        except FileNotFoundError:
+            local_mtime = datetime.now(UTC)
+
+        try:
+            remote_cfg, remote_meta = await _drive_get_config(
+                access_token=access_token,
+            )
+        except DriveCorruptedError as corrupted:
+            _log.warning(
+                "cloud_sync_config_corrupted_remote",
+                file_id=corrupted.file_id,
+                exc_type=type(corrupted.original).__name__,
+            )
+            from pydantic import ValidationError
+            if isinstance(corrupted.original, ValidationError):
+                _log.warning(
+                    "cloud_sync_config_schema_mismatch",
+                    file_id=corrupted.file_id,
+                )
+                return SyncResult(outcome=SyncOutcome.OK)
+            await _drive_rename_corrupted(
+                access_token=access_token, file_id=corrupted.file_id,
+            )
+            remote_cfg, remote_meta = None, None
+        except (
+            httpx.ConnectError, httpx.ReadError, httpx.TimeoutException,
+        ):
+            _log.warning("cloud_sync_network_error", phase="config_get")
+            return SyncResult(outcome=SyncOutcome.NETWORK)
+        except httpx.HTTPStatusError as exc:
+            return self._classify_drive_error(exc, phase="config_get")
+
+        if remote_cfg is None:
+            return await self._push_config(
+                access_token=access_token,
+                file_id=None,
+                etag=None,
+                local_cfg=local_cfg,
+                _attempt=_attempt,
+            )
+
+        assert remote_meta is not None
+        skew = timedelta(seconds=_MTIME_SKEW_SECONDS)
+        if remote_meta.modified_time > local_mtime + skew:
+            merged = _merge_config(
+                local_cfg, remote_cfg, local_mtime, remote_meta.modified_time,
+            )
+            self._config_store.apply_synced_overrides(merged)
+            return SyncResult(outcome=SyncOutcome.OK)
+        elif local_mtime > remote_meta.modified_time + skew:
+            return await self._push_config(
+                access_token=access_token,
+                file_id=remote_meta.file_id,
+                etag=remote_meta.etag,
+                local_cfg=local_cfg,
+                _attempt=_attempt,
+            )
+        else:
+            return SyncResult(outcome=SyncOutcome.OK)
+
+    async def _push_config(
+        self,
+        *,
+        access_token: str,
+        file_id: str | None,
+        etag: str | None,
+        local_cfg: Config,
+        _attempt: int = 0,
+    ) -> SyncResult:
+        """Wrap _drive_put_config with standard error classification.
+
+        On DriveConcurrentWriteError (412), re-call _sync_config with
+        incremented `_attempt` so sustained multi-device contention
+        cannot recurse past MAX_SYNC_RETRIES — mirrors Phase 1
+        dictionary sync (codex P2 fix on PR #29).
+        """
+        try:
+            await _drive_put_config(
+                access_token=access_token,
+                file_id=file_id,
+                etag=etag,
+                stripped_config=_strip_deny(local_cfg),
+            )
+        except DriveConcurrentWriteError:
+            if _attempt + 1 >= MAX_SYNC_RETRIES:
+                _log.warning(
+                    "cloud_sync_concurrent_write_config_max_retries",
+                    attempts=_attempt + 1,
+                )
+                return SyncResult(outcome=SyncOutcome.NETWORK)
+            _log.info(
+                "cloud_sync_concurrent_write_config_retrying",
+                attempt=_attempt + 1,
+            )
+            return await self._sync_config(
+                access_token=access_token, _attempt=_attempt + 1,
+            )
+        except (
+            httpx.ConnectError, httpx.ReadError, httpx.TimeoutException,
+        ):
+            _log.warning("cloud_sync_network_error", phase="config_put")
+            return SyncResult(outcome=SyncOutcome.NETWORK)
+        except httpx.HTTPStatusError as exc:
+            return self._classify_drive_error(exc, phase="config_put")
+        return SyncResult(outcome=SyncOutcome.OK)
+
+    async def _sync_usage(
+        self, access_token: str, _attempt: int = 0,
+    ) -> SyncResult:
+        """Pure-additive round-trip for usage.json — see spec §6.3.
+
+        `_attempt` is incremented by `_push_usage` on every 412 retry so
+        sustained multi-device write contention cannot recurse past
+        MAX_SYNC_RETRIES (codex P2 fix on PR #29).
+        """
+        # serialize_for_sync returns _V2State (dict[str, dict[str, dict[str, float]]]);
+        # cast to the looser signature _merge_usage expects.
+        local_usage = cast(
+            "dict[str, dict[str, object]]",
+            self._usage_tracker.serialize_for_sync(),
+        )
+
+        try:
+            remote_raw, remote_meta = await _drive_get_usage(
+                access_token=access_token,
+            )
+        except DriveCorruptedError as corrupted:
+            _log.warning(
+                "cloud_sync_usage_corrupted_remote",
+                file_id=corrupted.file_id,
+            )
+            await _drive_rename_corrupted(
+                access_token=access_token, file_id=corrupted.file_id,
+            )
+            remote_raw, remote_meta = {}, None
+        except (
+            httpx.ConnectError, httpx.ReadError, httpx.TimeoutException,
+        ):
+            _log.warning("cloud_sync_network_error", phase="usage_get")
+            return SyncResult(outcome=SyncOutcome.NETWORK)
+        except httpx.HTTPStatusError as exc:
+            return self._classify_drive_error(exc, phase="usage_get")
+
+        # _drive_get_usage returns dict[str, object]; narrow to the shape
+        # _merge_usage expects so the merge can iterate per-date buckets.
+        remote_usage = cast("dict[str, dict[str, object]]", remote_raw)
+        merged = _merge_usage(local_usage, remote_usage)
+
+        if merged != local_usage:
+            from soyle.core.usage import _V2State as _UsageV2State
+            self._usage_tracker.apply_merged(cast(_UsageV2State, merged))
+
+        if merged != remote_usage:
+            return await self._push_usage(
+                access_token=access_token,
+                file_id=remote_meta.file_id if remote_meta else None,
+                etag=remote_meta.etag if remote_meta else None,
+                merged=merged,
+                _attempt=_attempt,
+            )
+        return SyncResult(outcome=SyncOutcome.OK)
+
+    async def _push_usage(
+        self,
+        *,
+        access_token: str,
+        file_id: str | None,
+        etag: str | None,
+        merged: dict[str, dict[str, object]],
+        _attempt: int = 0,
+    ) -> SyncResult:
+        """Wrap _drive_put_usage with standard error classification.
+
+        On DriveConcurrentWriteError (412), re-call _sync_usage with
+        incremented `_attempt` so sustained contention cannot recurse
+        past MAX_SYNC_RETRIES (codex P2 fix on PR #29).
+        """
+        try:
+            await _drive_put_usage(
+                access_token=access_token,
+                file_id=file_id,
+                etag=etag,
+                # _drive_put_usage takes dict[str, object]; merged is a subtype
+                # but mypy's dict invariance requires an explicit cast.
+                usage_data=cast("dict[str, object]", merged),
+            )
+        except DriveConcurrentWriteError:
+            if _attempt + 1 >= MAX_SYNC_RETRIES:
+                _log.warning(
+                    "cloud_sync_concurrent_write_usage_max_retries",
+                    attempts=_attempt + 1,
+                )
+                return SyncResult(outcome=SyncOutcome.NETWORK)
+            _log.info(
+                "cloud_sync_concurrent_write_usage_retrying",
+                attempt=_attempt + 1,
+            )
+            return await self._sync_usage(
+                access_token=access_token, _attempt=_attempt + 1,
+            )
+        except (
+            httpx.ConnectError, httpx.ReadError, httpx.TimeoutException,
+        ):
+            _log.warning("cloud_sync_network_error", phase="usage_put")
+            return SyncResult(outcome=SyncOutcome.NETWORK)
+        except httpx.HTTPStatusError as exc:
+            return self._classify_drive_error(exc, phase="usage_put")
+        return SyncResult(outcome=SyncOutcome.OK)
 
     @staticmethod
     def _classify_drive_error(
@@ -1071,8 +1356,12 @@ async def _drive_get_config(
             return None, None
 
         file_id = files[0]["id"]
-        modified_iso = files[0]["modifiedTime"]
-        modified_dt = datetime.fromisoformat(modified_iso.replace("Z", "+00:00"))
+        modified_iso = files[0].get("modifiedTime", "")
+        modified_dt = (
+            datetime.fromisoformat(modified_iso.replace("Z", "+00:00"))
+            if modified_iso
+            else datetime.now(UTC)
+        )
 
         get_resp = await client.get(
             f"{DRIVE_API_BASE}/files/{file_id}",
@@ -1275,8 +1564,12 @@ async def _drive_get_usage(
             return {}, None
 
         file_id = files[0]["id"]
-        modified_iso = files[0]["modifiedTime"]
-        modified_dt = datetime.fromisoformat(modified_iso.replace("Z", "+00:00"))
+        modified_iso = files[0].get("modifiedTime", "")
+        modified_dt = (
+            datetime.fromisoformat(modified_iso.replace("Z", "+00:00"))
+            if modified_iso
+            else datetime.now(UTC)
+        )
 
         get_resp = await client.get(
             f"{DRIVE_API_BASE}/files/{file_id}",

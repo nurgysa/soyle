@@ -6,6 +6,7 @@ import hashlib
 import threading
 import uuid as _uuid
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from urllib.parse import urlencode
 from urllib.request import urlopen
 
@@ -312,6 +313,7 @@ def cloud_sync(tmp_path, mocker):
     """A CloudSync wired to in-memory keyring and a tmp config/dict store."""
     from soyle.core.config import ConfigStore
     from soyle.core.dictionary import DictionaryStore
+    from soyle.core.usage import UsageTracker
 
     backing: dict[tuple[str, str], str] = {}
     mocker.patch(
@@ -329,9 +331,11 @@ def cloud_sync(tmp_path, mocker):
 
     cfg_store = ConfigStore(config_path=tmp_path / "config.toml")
     dict_store = DictionaryStore(path=tmp_path / "dict.toml")
+    usage_tracker = UsageTracker(tmp_path / "usage.json")
     return CloudSync(
         dict_store=dict_store,
         config_store=cfg_store,
+        usage_tracker=usage_tracker,
         client_id="test-client-id.apps.googleusercontent.com",
     )
 
@@ -351,6 +355,7 @@ def test_is_configured_false_for_placeholder(tmp_path, mocker) -> None:
     """
     from soyle.core.config import ConfigStore
     from soyle.core.dictionary import DictionaryStore
+    from soyle.core.usage import UsageTracker
 
     backing: dict[tuple[str, str], str] = {}
     mocker.patch(
@@ -364,6 +369,7 @@ def test_is_configured_false_for_placeholder(tmp_path, mocker) -> None:
     cs = CloudSync(
         dict_store=DictionaryStore(path=tmp_path / "dict.toml"),
         config_store=ConfigStore(config_path=tmp_path / "config.toml"),
+        usage_tracker=UsageTracker(tmp_path / "usage.json"),
         client_id="REPLACE_WITH_REAL_CLIENT_ID.apps.googleusercontent.com",
     )
     assert cs.is_configured is False
@@ -377,6 +383,7 @@ async def test_begin_oauth_flow_rejects_placeholder_client_id(
     browser to a Google page that says 'OAuth client was not found'."""
     from soyle.core.config import ConfigStore
     from soyle.core.dictionary import DictionaryStore
+    from soyle.core.usage import UsageTracker
 
     mocker.patch("soyle.core.cloud_sync.webbrowser.open")
     backing: dict[tuple[str, str], str] = {}
@@ -391,6 +398,7 @@ async def test_begin_oauth_flow_rejects_placeholder_client_id(
     cs = CloudSync(
         dict_store=DictionaryStore(path=tmp_path / "dict.toml"),
         config_store=ConfigStore(config_path=tmp_path / "config.toml"),
+        usage_tracker=UsageTracker(tmp_path / "usage.json"),
         client_id="REPLACE_WITH_REAL_CLIENT_ID.apps.googleusercontent.com",
     )
     with pytest.raises(RuntimeError, match="not configured"):
@@ -624,10 +632,14 @@ async def test_sync_now_downloads_remote_when_local_empty(cloud_sync) -> None:
     respx.post(OAUTH_TOKEN_URL).mock(
         return_value=httpx.Response(200, json={"access_token": "ya29.x"})
     )
+    # list calls: dict GET + lookup, then config list + usage list (empty → push)
     respx.get(f"{DRIVE_API_BASE}/files").mock(
-        return_value=httpx.Response(
-            200, json={"files": [{"id": "id-1", "name": DRIVE_FILE_NAME}]}
-        )
+        side_effect=[
+            httpx.Response(200, json={"files": [{"id": "id-1", "name": DRIVE_FILE_NAME}]}),
+            httpx.Response(200, json={"files": [{"id": "id-1", "name": DRIVE_FILE_NAME}]}),
+            httpx.Response(200, json={"files": []}),
+            httpx.Response(200, json={"files": []}),
+        ]
     )
     respx.get(f"{DRIVE_API_BASE}/files/id-1").mock(
         return_value=httpx.Response(
@@ -636,7 +648,10 @@ async def test_sync_now_downloads_remote_when_local_empty(cloud_sync) -> None:
             headers={"ETag": '"e1"'},
         )
     )
-    # No upload needed — local now matches remote after merge.
+    # config + usage create uploads (no dict upload needed — already in sync)
+    respx.post(f"{DRIVE_UPLOAD_BASE}/files").mock(
+        return_value=httpx.Response(200, json={"id": "aux-id"})
+    )
 
     result = await cloud_sync.sync_now()
     assert result.outcome is SyncOutcome.OK
@@ -653,8 +668,14 @@ async def test_sync_now_unions_when_both_have_unique_terms(cloud_sync) -> None:
     respx.post(OAUTH_TOKEN_URL).mock(
         return_value=httpx.Response(200, json={"access_token": "ya29.x"})
     )
+    # list calls: dict GET + lookup, then config list + usage list (empty → push)
     respx.get(f"{DRIVE_API_BASE}/files").mock(
-        return_value=httpx.Response(200, json={"files": [{"id": "id-x"}]})
+        side_effect=[
+            httpx.Response(200, json={"files": [{"id": "id-x"}]}),
+            httpx.Response(200, json={"files": [{"id": "id-x"}]}),
+            httpx.Response(200, json={"files": []}),
+            httpx.Response(200, json={"files": []}),
+        ]
     )
     respx.get(f"{DRIVE_API_BASE}/files/id-x").mock(
         return_value=httpx.Response(
@@ -665,6 +686,10 @@ async def test_sync_now_unions_when_both_have_unique_terms(cloud_sync) -> None:
     )
     respx.patch(f"{DRIVE_UPLOAD_BASE}/files/id-x").mock(
         return_value=httpx.Response(200, json={"id": "id-x"})
+    )
+    # config + usage create uploads
+    respx.post(f"{DRIVE_UPLOAD_BASE}/files").mock(
+        return_value=httpx.Response(200, json={"id": "aux-id"})
     )
 
     result = await cloud_sync.sync_now()
@@ -683,8 +708,14 @@ async def test_sync_now_skips_writes_when_already_in_sync(cloud_sync) -> None:
     respx.post(OAUTH_TOKEN_URL).mock(
         return_value=httpx.Response(200, json={"access_token": "ya29.x"})
     )
+    # list calls: dict GET + lookup, then config list + usage list (empty → push)
     respx.get(f"{DRIVE_API_BASE}/files").mock(
-        return_value=httpx.Response(200, json={"files": [{"id": "id-1"}]})
+        side_effect=[
+            httpx.Response(200, json={"files": [{"id": "id-1"}]}),
+            httpx.Response(200, json={"files": [{"id": "id-1"}]}),
+            httpx.Response(200, json={"files": []}),
+            httpx.Response(200, json={"files": []}),
+        ]
     )
     respx.get(f"{DRIVE_API_BASE}/files/id-1").mock(
         return_value=httpx.Response(
@@ -696,12 +727,16 @@ async def test_sync_now_skips_writes_when_already_in_sync(cloud_sync) -> None:
     upload_route = respx.patch(f"{DRIVE_UPLOAD_BASE}/files/id-1").mock(
         return_value=httpx.Response(200, json={"id": "id-1"})
     )
+    # config + usage create uploads (dict doesn't need upload — already in sync)
+    respx.post(f"{DRIVE_UPLOAD_BASE}/files").mock(
+        return_value=httpx.Response(200, json={"id": "aux-id"})
+    )
 
     result = await cloud_sync.sync_now()
     assert result.outcome is SyncOutcome.OK
     assert result.added_local == 0
     assert result.added_remote == 0
-    assert not upload_route.called  # no PUT — already in sync
+    assert not upload_route.called  # no PUT — already in sync (dict only)
 
 
 @pytest.mark.asyncio
@@ -770,8 +805,16 @@ async def test_sync_now_retries_on_412_concurrent_write(cloud_sync) -> None:
     respx.post(OAUTH_TOKEN_URL).mock(
         return_value=httpx.Response(200, json={"access_token": "ya29.x"})
     )
+    # list calls: attempt 1 (dict+lookup), attempt 2 (dict+lookup), config, usage
     respx.get(f"{DRIVE_API_BASE}/files").mock(
-        return_value=httpx.Response(200, json={"files": [{"id": "x"}]})
+        side_effect=[
+            httpx.Response(200, json={"files": [{"id": "x"}]}),
+            httpx.Response(200, json={"files": [{"id": "x"}]}),
+            httpx.Response(200, json={"files": [{"id": "x"}]}),
+            httpx.Response(200, json={"files": [{"id": "x"}]}),
+            httpx.Response(200, json={"files": []}),
+            httpx.Response(200, json={"files": []}),
+        ]
     )
     get_route = respx.get(f"{DRIVE_API_BASE}/files/x").mock(
         side_effect=[
@@ -788,6 +831,10 @@ async def test_sync_now_retries_on_412_concurrent_write(cloud_sync) -> None:
             httpx.Response(412, json={"error": "precondition"}),  # first try fails
             httpx.Response(200, json={"id": "x"}),  # retry succeeds
         ]
+    )
+    # config + usage create uploads (no remote file → push local)
+    respx.post(f"{DRIVE_UPLOAD_BASE}/files").mock(
+        return_value=httpx.Response(200, json={"id": "aux-id"})
     )
 
     result = await cloud_sync.sync_now()
@@ -817,8 +864,15 @@ async def test_sync_now_bounds_412_retries_to_avoid_recursion(cloud_sync) -> Non
     respx.post(OAUTH_TOKEN_URL).mock(
         return_value=httpx.Response(200, json={"access_token": "ya29.x"})
     )
+    # dict phase: MAX_SYNC_RETRIES attempts × 2 list calls each; then config + usage
     respx.get(f"{DRIVE_API_BASE}/files").mock(
-        return_value=httpx.Response(200, json={"files": [{"id": "x"}]})
+        side_effect=[
+            # MAX_SYNC_RETRIES=3 attempts: each needs dict list + lookup = 2 calls
+            *[httpx.Response(200, json={"files": [{"id": "x"}]}) for _ in range(MAX_SYNC_RETRIES * 2)],
+            # config list + usage list (empty → no-ops for those phases)
+            httpx.Response(200, json={"files": []}),
+            httpx.Response(200, json={"files": []}),
+        ]
     )
     respx.get(f"{DRIVE_API_BASE}/files/x").mock(
         return_value=httpx.Response(
@@ -829,6 +883,10 @@ async def test_sync_now_bounds_412_retries_to_avoid_recursion(cloud_sync) -> Non
     )
     patch_route = respx.patch(f"{DRIVE_UPLOAD_BASE}/files/x").mock(
         return_value=httpx.Response(412, json={"error": "precondition"})
+    )
+    # config + usage create uploads (no remote file → push local)
+    respx.post(f"{DRIVE_UPLOAD_BASE}/files").mock(
+        return_value=httpx.Response(200, json={"id": "aux-id"})
     )
 
     result = await cloud_sync.sync_now()
@@ -2066,3 +2124,583 @@ async def test_drive_put_usage_updates_existing_with_if_match() -> None:
     assert update.called
     assert update.calls.last.request.headers["If-Match"] == "old"
     assert meta.etag == "new"
+
+
+# ---- Task 11: _sync_config orchestration ----
+
+# Tolerance constant from spec — keep in sync with cloud_sync.py
+_MTIME_SKEW_SECONDS = 5
+
+
+def _stub_device_id(monkeypatch: pytest.MonkeyPatch, device: str) -> None:
+    from soyle.core import usage as u
+    monkeypatch.setattr(u, "_device_id", lambda: device)
+
+
+def _make_cloud_sync(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+):
+    """Construct a CloudSync with isolated config + dict + usage stores
+    rooted in tmp_path. Doesn't connect (no refresh token in keyring)."""
+    from soyle.core.cloud_sync import CloudSync
+    from soyle.core.config import ConfigStore
+    from soyle.core.dictionary import DictionaryStore
+    from soyle.core.usage import UsageTracker
+
+    _stub_device_id(monkeypatch, "dev-A")
+    config_store = ConfigStore(config_path=tmp_path / "config.toml")
+    dict_store = DictionaryStore(path=tmp_path / "dictionary.toml")
+    usage_tracker = UsageTracker(tmp_path / "usage.json")
+    return CloudSync(
+        dict_store=dict_store,
+        config_store=config_store,
+        usage_tracker=usage_tracker,
+        client_id="test-client-id.apps.googleusercontent.com",
+    )
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_sync_config_uploads_when_remote_404(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """First device: no remote config → upload local (deny-stripped)."""
+    cs = _make_cloud_sync(tmp_path, monkeypatch)
+    cs._config_store.load()
+
+    list_route = respx.get(f"{_DRIVE_API_BASE}/files").mock(
+        return_value=httpx.Response(200, json={"files": []}),
+    )
+    create_route = respx.post(f"{_DRIVE_UPLOAD_BASE}/files").mock(
+        return_value=httpx.Response(200, json={"id": "NEW"}),
+    )
+
+    result = await cs._sync_config(access_token="tok")
+    assert result.outcome.name == "OK"
+    assert list_route.called
+    assert create_route.called
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_sync_config_pulls_when_remote_mtime_newer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cs = _make_cloud_sync(tmp_path, monkeypatch)
+    local = cs._config_store.load()
+    assert local.hotkey.combination == "right alt"
+
+    future = datetime.now(UTC).replace(microsecond=0) + timedelta(hours=1)
+    iso = future.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    remote_body = b"version = 1\n\n[hotkey]\ncombination = \"ctrl+shift\"\n"
+
+    respx.get(f"{_DRIVE_API_BASE}/files").mock(
+        return_value=httpx.Response(200, json={
+            "files": [{"id": "F1", "name": "config.toml", "modifiedTime": iso}],
+        }),
+    )
+    respx.get(f"{_DRIVE_API_BASE}/files/F1").mock(
+        return_value=httpx.Response(200, content=remote_body, headers={"ETag": "e1"}),
+    )
+
+    result = await cs._sync_config(access_token="tok")
+    assert result.outcome.name == "OK"
+
+    reloaded = cs._config_store.load()
+    assert reloaded.hotkey.combination == "ctrl+shift"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_sync_config_pushes_when_local_mtime_newer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cs = _make_cloud_sync(tmp_path, monkeypatch)
+    local = cs._config_store.load()
+    local.hotkey.combination = "ctrl+shift"
+    cs._config_store.save(local)  # bumps local mtime to now()
+
+    past = datetime.now(UTC).replace(microsecond=0) - timedelta(hours=1)
+    iso = past.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    remote_body = b"version = 1\n\n[hotkey]\ncombination = \"alt\"\n"
+
+    respx.get(f"{_DRIVE_API_BASE}/files").mock(
+        return_value=httpx.Response(200, json={
+            "files": [{"id": "F1", "name": "config.toml", "modifiedTime": iso}],
+        }),
+    )
+    respx.get(f"{_DRIVE_API_BASE}/files/F1").mock(
+        return_value=httpx.Response(
+            200, content=remote_body, headers={"ETag": "e-old"},
+        ),
+    )
+    push = respx.patch(f"{_DRIVE_UPLOAD_BASE}/files/F1").mock(
+        return_value=httpx.Response(
+            200, json={"id": "F1"}, headers={"ETag": "e-new"},
+        ),
+    )
+
+    result = await cs._sync_config(access_token="tok")
+    assert result.outcome.name == "OK"
+    assert push.called
+    assert push.calls.last.request.headers["If-Match"] == "e-old"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_sync_config_noop_when_mtimes_within_tolerance(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Within ±5s → no PATCH, no POST issued."""
+    cs = _make_cloud_sync(tmp_path, monkeypatch)
+    cs._config_store.load()
+    local_mtime = cs._config_store.mtime()
+
+    iso = local_mtime.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    remote_body = b"version = 1\n"
+
+    respx.get(f"{_DRIVE_API_BASE}/files").mock(
+        return_value=httpx.Response(200, json={
+            "files": [{"id": "F1", "name": "config.toml", "modifiedTime": iso}],
+        }),
+    )
+    respx.get(f"{_DRIVE_API_BASE}/files/F1").mock(
+        return_value=httpx.Response(
+            200, content=remote_body, headers={"ETag": "e"},
+        ),
+    )
+    patch_route = respx.patch(f"{_DRIVE_UPLOAD_BASE}/files/F1").mock(
+        return_value=httpx.Response(200, json={"id": "F1"}),
+    )
+
+    result = await cs._sync_config(access_token="tok")
+    assert result.outcome.name == "OK"
+    assert not patch_route.called
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_sync_config_corrupted_remote_renames_and_pushes_local(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Broken TOML on Drive → rename to .broken-<ts> + push local."""
+    cs = _make_cloud_sync(tmp_path, monkeypatch)
+    cs._config_store.load()
+
+    respx.get(f"{_DRIVE_API_BASE}/files").mock(
+        return_value=httpx.Response(200, json={
+            "files": [{"id": "F1", "name": "config.toml", "modifiedTime": "2026-05-22T10:00:00.000Z"}],
+        }),
+    )
+    respx.get(f"{_DRIVE_API_BASE}/files/F1").mock(
+        return_value=httpx.Response(200, content=b"@@@ not valid toml @@@"),
+    )
+    rename = respx.patch(f"{_DRIVE_API_BASE}/files/F1").mock(
+        return_value=httpx.Response(200, json={"id": "F1"}),
+    )
+    create = respx.post(f"{_DRIVE_UPLOAD_BASE}/files").mock(
+        return_value=httpx.Response(200, json={"id": "F2"}),
+    )
+
+    result = await cs._sync_config(access_token="tok")
+    assert result.outcome.name == "OK"
+    assert rename.called
+    assert create.called
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_sync_config_schema_mismatch_skipped_silently_preserves_remote(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Remote has unknown field (newer Söyle): skip the sync, leave both
+    sides intact, do NOT rename, do NOT push."""
+    cs = _make_cloud_sync(tmp_path, monkeypatch)
+    cs._config_store.load()
+
+    # Field unknown to this Söyle's Config — extra="forbid" → ValidationError
+    remote_body = b'version = 1\n\n[hotkey]\nfuture_field = "from-newer-Soyle"\n'
+    respx.get(f"{_DRIVE_API_BASE}/files").mock(
+        return_value=httpx.Response(200, json={
+            "files": [{"id": "F1", "name": "config.toml", "modifiedTime": "2026-05-22T10:00:00.000Z"}],
+        }),
+    )
+    respx.get(f"{_DRIVE_API_BASE}/files/F1").mock(
+        return_value=httpx.Response(200, content=remote_body),
+    )
+    rename = respx.patch(f"{_DRIVE_API_BASE}/files/F1").mock(
+        return_value=httpx.Response(200, json={"id": "F1"}),
+    )
+    create = respx.post(f"{_DRIVE_UPLOAD_BASE}/files").mock(
+        return_value=httpx.Response(200, json={"id": "F2"}),
+    )
+
+    result = await cs._sync_config(access_token="tok")
+    assert result.outcome.name == "OK"
+    assert not rename.called
+    assert not create.called
+
+
+# ---- Task 12: _sync_usage orchestration ----
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_sync_usage_uploads_to_empty_remote(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cs = _make_cloud_sync(tmp_path, monkeypatch)
+    cs._usage_tracker.record(0.05)
+
+    respx.get(f"{_DRIVE_API_BASE}/files").mock(
+        return_value=httpx.Response(200, json={"files": []}),
+    )
+    create = respx.post(f"{_DRIVE_UPLOAD_BASE}/files").mock(
+        return_value=httpx.Response(200, json={"id": "U1"}),
+    )
+
+    result = await cs._sync_usage(access_token="tok")
+    assert result.outcome.name == "OK"
+    assert create.called
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_sync_usage_picks_up_remote_device_entries(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Remote has dev-B's bucket → after sync, local sees both A and B."""
+    import json as _json
+    cs = _make_cloud_sync(tmp_path, monkeypatch)
+    cs._usage_tracker.record(0.05)
+
+    today_key = datetime.now(UTC).strftime("%Y-%m-%d")
+    remote_body = _json.dumps({
+        today_key: {"dev-B": {"cost_usd": 0.07, "requests": 3}},
+    }).encode("utf-8")
+
+    respx.get(f"{_DRIVE_API_BASE}/files").mock(
+        return_value=httpx.Response(200, json={
+            "files": [{"id": "U1", "name": "usage.json", "modifiedTime": "2026-05-22T10:00:00.000Z"}],
+        }),
+    )
+    respx.get(f"{_DRIVE_API_BASE}/files/U1").mock(
+        return_value=httpx.Response(
+            200, content=remote_body, headers={"ETag": "u-old"},
+        ),
+    )
+    push = respx.patch(f"{_DRIVE_UPLOAD_BASE}/files/U1").mock(
+        return_value=httpx.Response(
+            200, json={"id": "U1"}, headers={"ETag": "u-new"},
+        ),
+    )
+
+    result = await cs._sync_usage(access_token="tok")
+    assert result.outcome.name == "OK"
+    assert push.called
+    cost, reqs = cs._usage_tracker.today()
+    assert cost == pytest.approx(0.12)
+    assert reqs == 4
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_sync_usage_noop_when_local_matches_remote(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Local == remote → no PUT issued."""
+    import json as _json
+    cs = _make_cloud_sync(tmp_path, monkeypatch)
+    cs._usage_tracker.record(0.05)
+    snapshot = cs._usage_tracker.serialize_for_sync()
+    body = _json.dumps(snapshot, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+
+    respx.get(f"{_DRIVE_API_BASE}/files").mock(
+        return_value=httpx.Response(200, json={
+            "files": [{"id": "U1", "name": "usage.json", "modifiedTime": "2026-05-22T10:00:00.000Z"}],
+        }),
+    )
+    respx.get(f"{_DRIVE_API_BASE}/files/U1").mock(
+        return_value=httpx.Response(200, content=body, headers={"ETag": "u"}),
+    )
+    patch_route = respx.patch(f"{_DRIVE_UPLOAD_BASE}/files/U1").mock(
+        return_value=httpx.Response(200, json={"id": "U1"}),
+    )
+
+    result = await cs._sync_usage(access_token="tok")
+    assert result.outcome.name == "OK"
+    assert not patch_route.called
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_sync_usage_corrupted_remote_renames_and_pushes_local(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cs = _make_cloud_sync(tmp_path, monkeypatch)
+    cs._usage_tracker.record(0.05)
+
+    respx.get(f"{_DRIVE_API_BASE}/files").mock(
+        return_value=httpx.Response(200, json={
+            "files": [{"id": "U1", "name": "usage.json", "modifiedTime": "2026-05-22T10:00:00.000Z"}],
+        }),
+    )
+    respx.get(f"{_DRIVE_API_BASE}/files/U1").mock(
+        return_value=httpx.Response(200, content=b"not json {{{ @@@"),
+    )
+    rename = respx.patch(f"{_DRIVE_API_BASE}/files/U1").mock(
+        return_value=httpx.Response(200, json={"id": "U1"}),
+    )
+    create = respx.post(f"{_DRIVE_UPLOAD_BASE}/files").mock(
+        return_value=httpx.Response(200, json={"id": "U2"}),
+    )
+
+    result = await cs._sync_usage(access_token="tok")
+    assert result.outcome.name == "OK"
+    assert rename.called
+    assert create.called
+
+
+# ---- Task 13: sync_now three-file orchestration ----
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_sync_now_runs_dict_config_usage_in_sequence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """One sync_now call hits all three: dict GET, config GET, usage GET."""
+    cs = _make_cloud_sync(tmp_path, monkeypatch)
+    cs._token_store.save("rt")
+    cs._config_store.load()
+    # seed dict + usage so all three phases have something to upload
+    cs._dict_store.save(["Söyle"])
+    cs._usage_tracker.record(0.01)
+
+    respx.post("https://oauth2.googleapis.com/token").mock(
+        return_value=httpx.Response(200, json={"access_token": "tok"}),
+    )
+    respx.get(f"{_DRIVE_API_BASE}/files").mock(
+        return_value=httpx.Response(200, json={"files": []}),
+    )
+    create = respx.post(f"{_DRIVE_UPLOAD_BASE}/files").mock(
+        return_value=httpx.Response(200, json={"id": "X"}),
+    )
+
+    result = await cs.sync_now()
+    assert result.outcome.name == "OK"
+    # 3 creates: dict + config + usage
+    assert create.call_count == 3
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_sync_now_continues_when_config_sync_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Config network fail → outcome=NETWORK, but dict + usage still tried."""
+    cs = _make_cloud_sync(tmp_path, monkeypatch)
+    cs._token_store.save("rt")
+    cs._config_store.load()
+    # seed dict + usage so dict and usage each do a create
+    cs._dict_store.save(["Söyle"])
+    cs._usage_tracker.record(0.01)
+
+    respx.post("https://oauth2.googleapis.com/token").mock(
+        return_value=httpx.Response(200, json={"access_token": "tok"}),
+    )
+
+    list_calls = {"n": 0}
+
+    def list_side_effect(request):
+        list_calls["n"] += 1
+        # call 1 = dict list, call 2 = dict lookup, call 3 = config list (fail here)
+        if list_calls["n"] == 3:
+            raise httpx.ConnectError("simulated")
+        return httpx.Response(200, json={"files": []})
+
+    respx.get(f"{_DRIVE_API_BASE}/files").mock(side_effect=list_side_effect)
+    create = respx.post(f"{_DRIVE_UPLOAD_BASE}/files").mock(
+        return_value=httpx.Response(200, json={"id": "X"}),
+    )
+
+    result = await cs.sync_now()
+    assert result.outcome.name == "NETWORK"
+    assert create.call_count == 2  # dict + usage succeeded; config errored before create
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_sync_now_aggregates_worst_outcome_auth_revoked_over_network(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """AUTH_REVOKED on token refresh short-circuits — no Drive calls happen."""
+    cs = _make_cloud_sync(tmp_path, monkeypatch)
+    cs._token_store.save("rt")
+
+    respx.post("https://oauth2.googleapis.com/token").mock(
+        return_value=httpx.Response(
+            400, json={"error": "invalid_grant", "error_description": "revoked"},
+        ),
+    )
+    drive_get = respx.get(f"{_DRIVE_API_BASE}/files").mock(
+        return_value=httpx.Response(200, json={"files": []}),
+    )
+
+    result = await cs.sync_now()
+    assert result.outcome.name == "AUTH_REVOKED"
+    assert not drive_get.called
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_sync_now_bumps_last_synced_at_on_at_least_one_success(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cs = _make_cloud_sync(tmp_path, monkeypatch)
+    cs._token_store.save("rt")
+    cs._config_store.load()
+
+    respx.post("https://oauth2.googleapis.com/token").mock(
+        return_value=httpx.Response(200, json={"access_token": "tok"}),
+    )
+    respx.get(f"{_DRIVE_API_BASE}/files").mock(
+        return_value=httpx.Response(200, json={"files": []}),
+    )
+    respx.post(f"{_DRIVE_UPLOAD_BASE}/files").mock(
+        return_value=httpx.Response(200, json={"id": "X"}),
+    )
+
+    before = cs.last_synced_at
+    await cs.sync_now()
+    after = cs.last_synced_at
+
+    assert before != after
+    assert after is not None
+
+
+# ---- PR4 codex fixes: P1 (last_synced_at only on OK) + P2 (412 retry cap) ----
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_sync_now_does_not_bump_last_synced_at_on_partial_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """P1 fix: a NETWORK outcome from any phase must NOT advance
+    last_synced_at — otherwise the next 24h scheduled sync gets
+    suppressed despite still needing retry."""
+    cs = _make_cloud_sync(tmp_path, monkeypatch)
+    cs._token_store.save("rt")
+    cs._config_store.load()
+
+    respx.post("https://oauth2.googleapis.com/token").mock(
+        return_value=httpx.Response(200, json={"access_token": "tok"}),
+    )
+
+    list_calls = {"n": 0}
+
+    def list_side_effect(request: httpx.Request) -> httpx.Response:
+        list_calls["n"] += 1
+        # dict (call 1) → empty, config (call 2) → NETWORK, usage (call 3) → empty
+        if list_calls["n"] == 2:
+            raise httpx.ConnectError("simulated")
+        return httpx.Response(200, json={"files": []})
+
+    respx.get(f"{_DRIVE_API_BASE}/files").mock(side_effect=list_side_effect)
+    respx.post(f"{_DRIVE_UPLOAD_BASE}/files").mock(
+        return_value=httpx.Response(200, json={"id": "X"}),
+    )
+
+    before = cs.last_synced_at
+    result = await cs.sync_now()
+    after = cs.last_synced_at
+
+    assert result.outcome.name == "NETWORK"  # worst across 3 phases
+    assert after == before  # NO bump — partial failure
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_sync_config_caps_412_retries_at_max_sync_retries(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """P2 fix: sustained 412 contention must NOT recurse past
+    MAX_SYNC_RETRIES. Final outcome is NETWORK and call count is
+    bounded by the cap."""
+    from soyle.core.cloud_sync import MAX_SYNC_RETRIES
+
+    cs = _make_cloud_sync(tmp_path, monkeypatch)
+    cs._config_store.load()
+
+    # Remote is "newer" so the push path runs every retry
+    future_iso = (datetime.now(UTC) + timedelta(hours=1)).strftime(
+        "%Y-%m-%dT%H:%M:%S.000Z",
+    )
+    respx.get(f"{_DRIVE_API_BASE}/files").mock(
+        return_value=httpx.Response(200, json={
+            "files": [{
+                "id": "F1",
+                "name": "config.toml",
+                "modifiedTime": future_iso,
+            }],
+        }),
+    )
+    respx.get(f"{_DRIVE_API_BASE}/files/F1").mock(
+        return_value=httpx.Response(
+            200,
+            content=b"version = 1\n",
+            headers={"ETag": "stale"},
+        ),
+    )
+    # Wait — remote_newer path takes pull, not push. Force local-newer:
+    # touch the local config file so its mtime is far in the future.
+    import os
+    import time
+    far_future = time.time() + 7200  # 2h ahead
+    os.utime(cs._config_store._path, (far_future, far_future))
+
+    patch_route = respx.patch(
+        f"{_DRIVE_UPLOAD_BASE}/files/F1",
+    ).mock(return_value=httpx.Response(412))
+
+    result = await cs._sync_config(access_token="tok")
+
+    # Outcome capped at NETWORK (max retries exhausted)
+    assert result.outcome.name == "NETWORK"
+    # PATCH was called exactly MAX_SYNC_RETRIES times, not infinitely
+    assert patch_route.call_count == MAX_SYNC_RETRIES
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_sync_usage_caps_412_retries_at_max_sync_retries(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Same P2 contract for usage push path."""
+    from soyle.core.cloud_sync import MAX_SYNC_RETRIES
+
+    cs = _make_cloud_sync(tmp_path, monkeypatch)
+    cs._usage_tracker.record(0.05)
+
+    iso = "2026-05-22T10:00:00.000Z"
+    body = b'{"2026-05-22": {"dev-OTHER": {"cost_usd": 0.07, "requests": 3}}}'
+
+    respx.get(f"{_DRIVE_API_BASE}/files").mock(
+        return_value=httpx.Response(200, json={
+            "files": [{
+                "id": "U1", "name": "usage.json", "modifiedTime": iso,
+            }],
+        }),
+    )
+    respx.get(f"{_DRIVE_API_BASE}/files/U1").mock(
+        return_value=httpx.Response(
+            200, content=body, headers={"ETag": "stale"},
+        ),
+    )
+    patch_route = respx.patch(
+        f"{_DRIVE_UPLOAD_BASE}/files/U1",
+    ).mock(return_value=httpx.Response(412))
+
+    result = await cs._sync_usage(access_token="tok")
+
+    assert result.outcome.name == "NETWORK"
+    assert patch_route.call_count == MAX_SYNC_RETRIES
