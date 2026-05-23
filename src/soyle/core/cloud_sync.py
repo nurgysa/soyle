@@ -795,8 +795,13 @@ class CloudSync:
             usage_result.outcome,
         )
 
-        # Stamp last_synced_at only if AT LEAST one file made progress.
-        if worst != SyncOutcome.AUTH_REVOKED:
+        # Stamp last_synced_at only on full success — partial failures
+        # (NETWORK/QUOTA/UNEXPECTED) must NOT advance the schedule, or
+        # the next 24h sync gets suppressed despite still needing retry.
+        # AUTH_REVOKED is handled earlier in sync_now() and never reaches
+        # here, but listing it as a non-OK outcome documents intent.
+        # Per codex P1 review on PR #29.
+        if worst == SyncOutcome.OK:
             cfg = self._config_store.load()
             cfg.cloud_sync.last_synced_at = datetime.now(UTC)
             self._config_store.save(cfg)
@@ -904,8 +909,15 @@ class CloudSync:
         file_id: str = files[0]["id"]
         return file_id
 
-    async def _sync_config(self, access_token: str) -> SyncResult:
-        """Single round-trip for config.toml — pulls or pushes by mtime."""
+    async def _sync_config(
+        self, access_token: str, _attempt: int = 0,
+    ) -> SyncResult:
+        """Single round-trip for config.toml — pulls or pushes by mtime.
+
+        `_attempt` is incremented by `_push_config` on every 412 retry so
+        sustained multi-device write contention cannot recurse past
+        MAX_SYNC_RETRIES (mirrors Phase 1 dictionary sync; codex P2 fix).
+        """
         local_cfg = self._config_store.load()
         try:
             local_mtime = self._config_store.mtime()
@@ -947,6 +959,7 @@ class CloudSync:
                 file_id=None,
                 etag=None,
                 local_cfg=local_cfg,
+                _attempt=_attempt,
             )
 
         assert remote_meta is not None
@@ -963,6 +976,7 @@ class CloudSync:
                 file_id=remote_meta.file_id,
                 etag=remote_meta.etag,
                 local_cfg=local_cfg,
+                _attempt=_attempt,
             )
         else:
             return SyncResult(outcome=SyncOutcome.OK)
@@ -974,8 +988,15 @@ class CloudSync:
         file_id: str | None,
         etag: str | None,
         local_cfg: Config,
+        _attempt: int = 0,
     ) -> SyncResult:
-        """Wrap _drive_put_config with standard error classification."""
+        """Wrap _drive_put_config with standard error classification.
+
+        On DriveConcurrentWriteError (412), re-call _sync_config with
+        incremented `_attempt` so sustained multi-device contention
+        cannot recurse past MAX_SYNC_RETRIES — mirrors Phase 1
+        dictionary sync (codex P2 fix on PR #29).
+        """
         try:
             await _drive_put_config(
                 access_token=access_token,
@@ -984,8 +1005,19 @@ class CloudSync:
                 stripped_config=_strip_deny(local_cfg),
             )
         except DriveConcurrentWriteError:
-            _log.info("cloud_sync_concurrent_write_config_retrying")
-            return await self._sync_config(access_token=access_token)
+            if _attempt + 1 >= MAX_SYNC_RETRIES:
+                _log.warning(
+                    "cloud_sync_concurrent_write_config_max_retries",
+                    attempts=_attempt + 1,
+                )
+                return SyncResult(outcome=SyncOutcome.NETWORK)
+            _log.info(
+                "cloud_sync_concurrent_write_config_retrying",
+                attempt=_attempt + 1,
+            )
+            return await self._sync_config(
+                access_token=access_token, _attempt=_attempt + 1,
+            )
         except (
             httpx.ConnectError, httpx.ReadError, httpx.TimeoutException,
         ):
@@ -995,8 +1027,15 @@ class CloudSync:
             return self._classify_drive_error(exc, phase="config_put")
         return SyncResult(outcome=SyncOutcome.OK)
 
-    async def _sync_usage(self, access_token: str) -> SyncResult:
-        """Pure-additive round-trip for usage.json — see spec §6.3."""
+    async def _sync_usage(
+        self, access_token: str, _attempt: int = 0,
+    ) -> SyncResult:
+        """Pure-additive round-trip for usage.json — see spec §6.3.
+
+        `_attempt` is incremented by `_push_usage` on every 412 retry so
+        sustained multi-device write contention cannot recurse past
+        MAX_SYNC_RETRIES (codex P2 fix on PR #29).
+        """
         # serialize_for_sync returns _V2State (dict[str, dict[str, dict[str, float]]]);
         # cast to the looser signature _merge_usage expects.
         local_usage = cast(
@@ -1040,6 +1079,7 @@ class CloudSync:
                 file_id=remote_meta.file_id if remote_meta else None,
                 etag=remote_meta.etag if remote_meta else None,
                 merged=merged,
+                _attempt=_attempt,
             )
         return SyncResult(outcome=SyncOutcome.OK)
 
@@ -1050,7 +1090,14 @@ class CloudSync:
         file_id: str | None,
         etag: str | None,
         merged: dict[str, dict[str, object]],
+        _attempt: int = 0,
     ) -> SyncResult:
+        """Wrap _drive_put_usage with standard error classification.
+
+        On DriveConcurrentWriteError (412), re-call _sync_usage with
+        incremented `_attempt` so sustained contention cannot recurse
+        past MAX_SYNC_RETRIES (codex P2 fix on PR #29).
+        """
         try:
             await _drive_put_usage(
                 access_token=access_token,
@@ -1061,8 +1108,19 @@ class CloudSync:
                 usage_data=cast("dict[str, object]", merged),
             )
         except DriveConcurrentWriteError:
-            _log.info("cloud_sync_concurrent_write_usage_retrying")
-            return await self._sync_usage(access_token=access_token)
+            if _attempt + 1 >= MAX_SYNC_RETRIES:
+                _log.warning(
+                    "cloud_sync_concurrent_write_usage_max_retries",
+                    attempts=_attempt + 1,
+                )
+                return SyncResult(outcome=SyncOutcome.NETWORK)
+            _log.info(
+                "cloud_sync_concurrent_write_usage_retrying",
+                attempt=_attempt + 1,
+            )
+            return await self._sync_usage(
+                access_token=access_token, _attempt=_attempt + 1,
+            )
         except (
             httpx.ConnectError, httpx.ReadError, httpx.TimeoutException,
         ):

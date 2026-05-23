@@ -2575,3 +2575,132 @@ async def test_sync_now_bumps_last_synced_at_on_at_least_one_success(
 
     assert before != after
     assert after is not None
+
+
+# ---- PR4 codex fixes: P1 (last_synced_at only on OK) + P2 (412 retry cap) ----
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_sync_now_does_not_bump_last_synced_at_on_partial_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """P1 fix: a NETWORK outcome from any phase must NOT advance
+    last_synced_at — otherwise the next 24h scheduled sync gets
+    suppressed despite still needing retry."""
+    cs = _make_cloud_sync(tmp_path, monkeypatch)
+    cs._token_store.save("rt")
+    cs._config_store.load()
+
+    respx.post("https://oauth2.googleapis.com/token").mock(
+        return_value=httpx.Response(200, json={"access_token": "tok"}),
+    )
+
+    list_calls = {"n": 0}
+
+    def list_side_effect(request: httpx.Request) -> httpx.Response:
+        list_calls["n"] += 1
+        # dict (call 1) → empty, config (call 2) → NETWORK, usage (call 3) → empty
+        if list_calls["n"] == 2:
+            raise httpx.ConnectError("simulated")
+        return httpx.Response(200, json={"files": []})
+
+    respx.get(f"{_DRIVE_API_BASE}/files").mock(side_effect=list_side_effect)
+    respx.post(f"{_DRIVE_UPLOAD_BASE}/files").mock(
+        return_value=httpx.Response(200, json={"id": "X"}),
+    )
+
+    before = cs.last_synced_at
+    result = await cs.sync_now()
+    after = cs.last_synced_at
+
+    assert result.outcome.name == "NETWORK"  # worst across 3 phases
+    assert after == before  # NO bump — partial failure
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_sync_config_caps_412_retries_at_max_sync_retries(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """P2 fix: sustained 412 contention must NOT recurse past
+    MAX_SYNC_RETRIES. Final outcome is NETWORK and call count is
+    bounded by the cap."""
+    from soyle.core.cloud_sync import MAX_SYNC_RETRIES
+
+    cs = _make_cloud_sync(tmp_path, monkeypatch)
+    cs._config_store.load()
+
+    # Remote is "newer" so the push path runs every retry
+    future_iso = (datetime.now(UTC) + timedelta(hours=1)).strftime(
+        "%Y-%m-%dT%H:%M:%S.000Z",
+    )
+    respx.get(f"{_DRIVE_API_BASE}/files").mock(
+        return_value=httpx.Response(200, json={
+            "files": [{
+                "id": "F1",
+                "name": "config.toml",
+                "modifiedTime": future_iso,
+            }],
+        }),
+    )
+    respx.get(f"{_DRIVE_API_BASE}/files/F1").mock(
+        return_value=httpx.Response(
+            200,
+            content=b"version = 1\n",
+            headers={"ETag": "stale"},
+        ),
+    )
+    # Wait — remote_newer path takes pull, not push. Force local-newer:
+    # touch the local config file so its mtime is far in the future.
+    import os
+    import time
+    far_future = time.time() + 7200  # 2h ahead
+    os.utime(cs._config_store._path, (far_future, far_future))
+
+    patch_route = respx.patch(
+        f"{_DRIVE_UPLOAD_BASE}/files/F1",
+    ).mock(return_value=httpx.Response(412))
+
+    result = await cs._sync_config(access_token="tok")
+
+    # Outcome capped at NETWORK (max retries exhausted)
+    assert result.outcome.name == "NETWORK"
+    # PATCH was called exactly MAX_SYNC_RETRIES times, not infinitely
+    assert patch_route.call_count == MAX_SYNC_RETRIES
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_sync_usage_caps_412_retries_at_max_sync_retries(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Same P2 contract for usage push path."""
+    from soyle.core.cloud_sync import MAX_SYNC_RETRIES
+
+    cs = _make_cloud_sync(tmp_path, monkeypatch)
+    cs._usage_tracker.record(0.05)
+
+    iso = "2026-05-22T10:00:00.000Z"
+    body = b'{"2026-05-22": {"dev-OTHER": {"cost_usd": 0.07, "requests": 3}}}'
+
+    respx.get(f"{_DRIVE_API_BASE}/files").mock(
+        return_value=httpx.Response(200, json={
+            "files": [{
+                "id": "U1", "name": "usage.json", "modifiedTime": iso,
+            }],
+        }),
+    )
+    respx.get(f"{_DRIVE_API_BASE}/files/U1").mock(
+        return_value=httpx.Response(
+            200, content=body, headers={"ETag": "stale"},
+        ),
+    )
+    patch_route = respx.patch(
+        f"{_DRIVE_UPLOAD_BASE}/files/U1",
+    ).mock(return_value=httpx.Response(412))
+
+    result = await cs._sync_usage(access_token="tok")
+
+    assert result.outcome.name == "NETWORK"
+    assert patch_route.call_count == MAX_SYNC_RETRIES
