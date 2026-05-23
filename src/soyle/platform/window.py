@@ -21,17 +21,6 @@ def is_same_window(expected: int, current: int) -> bool:
     return expected == current
 
 
-def refocus(hwnd: int) -> bool:
-    """Attempt to bring the given HWND back to the foreground. Returns True on success."""
-    if sys.platform != "win32" or hwnd == 0:
-        return False
-    try:
-        win32gui.SetForegroundWindow(hwnd)
-        return True
-    except Exception:
-        return False
-
-
 def get_window_class_name(hwnd: int) -> str:
     """Return the Win32 class name of ``hwnd`` (e.g. 'ConsoleWindowClass').
 

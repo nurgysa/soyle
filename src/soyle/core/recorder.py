@@ -82,7 +82,7 @@ class Recorder:
         self._sample_rate = sample_rate
         self._queue = Queue()
 
-        def _callback(indata: np.ndarray, frames: int, time_info: Any, status: Any) -> None:
+        def _callback(indata: np.ndarray, _frames: int, _time_info: Any, _status: Any) -> None:
             mono = indata[:, 0].copy() if indata.ndim > 1 else indata.copy()
             self._queue.put(mono)
 

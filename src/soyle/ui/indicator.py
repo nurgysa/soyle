@@ -1,7 +1,6 @@
 """Frameless pill overlay that follows the cursor and shows recording state."""
 from __future__ import annotations
 
-from collections import deque
 from typing import Literal
 
 from PySide6.QtCore import QPoint, QRect, Qt, QTimer
@@ -35,7 +34,6 @@ class Indicator(QWidget):
 
         self._stage: Stage = "hidden"
         self._text: str = ""
-        self._rms_history: deque[float] = deque(maxlen=40)
 
         self._follow_timer = QTimer(self)
         self._follow_timer.setInterval(50)
@@ -50,7 +48,6 @@ class Indicator(QWidget):
     def show_recording(self) -> None:
         self._stage = "recording"
         self._text = "Recording"
-        self._rms_history.clear()
         self._follow_timer.start()
         self.show()
         self.update()
@@ -70,10 +67,6 @@ class Indicator(QWidget):
         self._text = message
         self.show()
         self._auto_hide_timer.start(duration_ms)
-        self.update()
-
-    def push_rms(self, rms: float) -> None:
-        self._rms_history.append(min(1.0, rms * 5))
         self.update()
 
     def hide_indicator(self) -> None:
@@ -97,20 +90,5 @@ class Indicator(QWidget):
         rect = QRect(0, 0, self.width() - 1, self.height() - 1)
         p.drawRoundedRect(rect, 18, 18)
 
-        # waveform on left
-        if self._stage == "recording" and self._rms_history:
-            p.setPen(QPen(STAGE_COLORS["recording"], 1))
-            bar_w = 2
-            gap = 1
-            x = 12
-            mid = self.height() // 2
-            for level in self._rms_history:
-                h = max(2, int(level * (self.height() - 14)))
-                p.drawRect(x, mid - h // 2, bar_w, h)
-                x += bar_w + gap
-                if x > 80:
-                    break
-
-        # text
         p.setPen(QColor("#ffffff"))
         p.drawText(rect.adjusted(90, 0, -10, 0), Qt.AlignmentFlag.AlignVCenter, self._text)
