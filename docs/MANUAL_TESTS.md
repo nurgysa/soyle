@@ -23,7 +23,6 @@ Run this checklist before each release. Do NOT release if anything fails.
 - [ ] Open a text editor (Claude chat input, VS Code, or browser form)
 - [ ] Click into the text area
 - [ ] Hold RightAlt → pill "● Recording" appears near cursor
-- [ ] Pill shows live waveform during speech
 - [ ] Release after ~3 sec → pill cycles "Transcribing…" → "Polishing…" → hidden
 - [ ] Dictated text appears in the target field
 - [ ] Total dead air after release ≤ 1 second on GPU, ≤ 4 seconds on CPU
@@ -119,6 +118,13 @@ They cover behaviors that depend on real OAuth, real Drive, real Windows,
 or real PyInstaller bundles — none of which are practical to automate.
 
 ### Pre-conditions
+
+> **⚠ Gate:** If `_GOOGLE_CLIENT_ID` in `src/soyle/app.py` is still the
+> placeholder `"REPLACE_WITH_REAL_CLIENT_ID..."`, **skip all of section
+> A–E and F.1/F.2/F.4/F.5 below — they require a real OAuth client**.
+> The single check that works with the placeholder is **F.3
+> (Placeholder client_id)** — it asserts the expected `RuntimeError`
+> + `cloud_sync_client_id_not_configured` warning fail-fast path.
 
 - [ ] Real Google account with Drive enabled and quota < 100% used
 - [ ] `_GOOGLE_CLIENT_ID` in `src/soyle/app.py` replaced with a real Desktop-app
