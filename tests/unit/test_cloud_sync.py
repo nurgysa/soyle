@@ -1792,6 +1792,241 @@ async def test_drive_get_usage_raises_corrupted_on_invalid_json() -> None:
         await _drive_get_usage(access_token="tok")
 
 
+# ---- PR3 codex fixes: Drive modifiedTime + v2 shape validation ----
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_drive_put_config_returns_server_modified_time_on_create() -> None:
+    """P1 fix: modified_time comes from Drive response, not local clock."""
+    from soyle.core.cloud_sync import _drive_put_config
+
+    iso = "2026-05-22T11:30:00.123Z"
+    expected = datetime(2026, 5, 22, 11, 30, 0, 123000, tzinfo=UTC)
+
+    create = respx.post(f"{DRIVE_UPLOAD_BASE}/files").mock(
+        return_value=httpx.Response(
+            200, json={"id": "NEW", "modifiedTime": iso},
+        ),
+    )
+
+    meta = await _drive_put_config(
+        access_token="tok",
+        file_id=None,
+        etag=None,
+        stripped_config={"hotkey": {"combination": "alt"}},
+    )
+    assert meta.modified_time == expected
+    # Verify the fields query param was sent so Drive returns modifiedTime
+    sent_url = str(create.calls.last.request.url)
+    assert "fields=id%2CmodifiedTime" in sent_url or "fields=id,modifiedTime" in sent_url
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_drive_put_config_returns_server_modified_time_on_update() -> None:
+    from soyle.core.cloud_sync import _drive_put_config
+
+    iso = "2026-05-22T12:45:30Z"
+    expected = datetime(2026, 5, 22, 12, 45, 30, tzinfo=UTC)
+
+    respx.patch(f"{DRIVE_UPLOAD_BASE}/files/F1").mock(
+        return_value=httpx.Response(
+            200, json={"id": "F1", "modifiedTime": iso},
+            headers={"ETag": "new"},
+        ),
+    )
+
+    meta = await _drive_put_config(
+        access_token="tok",
+        file_id="F1",
+        etag="old",
+        stripped_config={"hotkey": {"combination": "alt"}},
+    )
+    assert meta.modified_time == expected
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_drive_put_usage_returns_server_modified_time_on_create() -> None:
+    from soyle.core.cloud_sync import _drive_put_usage
+
+    iso = "2026-05-22T09:15:00.000Z"
+    expected = datetime(2026, 5, 22, 9, 15, 0, tzinfo=UTC)
+
+    respx.post(f"{DRIVE_UPLOAD_BASE}/files").mock(
+        return_value=httpx.Response(
+            200, json={"id": "U1", "modifiedTime": iso},
+        ),
+    )
+
+    meta = await _drive_put_usage(
+        access_token="tok",
+        file_id=None,
+        etag=None,
+        usage_data={"2026-05-22": {"dev-A": {"cost_usd": 0.05, "requests": 2}}},
+    )
+    assert meta.modified_time == expected
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_drive_put_usage_returns_server_modified_time_on_update() -> None:
+    from soyle.core.cloud_sync import _drive_put_usage
+
+    iso = "2026-05-22T15:00:00Z"
+    expected = datetime(2026, 5, 22, 15, 0, 0, tzinfo=UTC)
+
+    respx.patch(f"{DRIVE_UPLOAD_BASE}/files/U1").mock(
+        return_value=httpx.Response(
+            200, json={"id": "U1", "modifiedTime": iso}, headers={"ETag": "new"},
+        ),
+    )
+
+    meta = await _drive_put_usage(
+        access_token="tok",
+        file_id="U1",
+        etag="old",
+        usage_data={"2026-05-22": {"dev-A": {"cost_usd": 0.01, "requests": 1}}},
+    )
+    assert meta.modified_time == expected
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_drive_put_config_falls_back_when_modifiedtime_missing() -> None:
+    """Existing mocked Drive responses (no modifiedTime field) still work —
+    helper falls back to datetime.now(UTC). This pins the backward-compat
+    contract for tests that pre-date the P1 fix."""
+    from soyle.core.cloud_sync import _drive_put_config
+
+    respx.post(f"{DRIVE_UPLOAD_BASE}/files").mock(
+        return_value=httpx.Response(200, json={"id": "X"}),  # no modifiedTime
+    )
+
+    before = datetime.now(UTC)
+    meta = await _drive_put_config(
+        access_token="tok",
+        file_id=None,
+        etag=None,
+        stripped_config={"hotkey": {"combination": "alt"}},
+    )
+    after = datetime.now(UTC)
+    # Fell back to a local wall-clock value somewhere in [before, after]
+    assert before <= meta.modified_time <= after
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_drive_get_usage_raises_on_malformed_date_value() -> None:
+    """P2 fix: nested-shape validation rejects payloads where a date
+    value isn't a dict, e.g. {"2026-05-22": 1}."""
+    from soyle.core.cloud_sync import _drive_get_usage
+
+    body = b'{"2026-05-22": 1}'
+
+    respx.get(f"{DRIVE_API_BASE}/files").mock(
+        return_value=httpx.Response(200, json={
+            "files": [{
+                "id": "F2",
+                "name": "usage.json",
+                "modifiedTime": "2026-05-22T10:00:00.000Z",
+            }],
+        }),
+    )
+    respx.get(f"{DRIVE_API_BASE}/files/F2").mock(
+        return_value=httpx.Response(200, content=body, headers={"ETag": "e"}),
+    )
+
+    with pytest.raises(DriveCorruptedError):
+        await _drive_get_usage(access_token="tok")
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_drive_get_usage_raises_on_malformed_bucket_value() -> None:
+    """Bucket value must be a dict — strings reject."""
+    from soyle.core.cloud_sync import _drive_get_usage
+
+    body = b'{"2026-05-22": {"dev-A": "not-a-dict"}}'
+
+    respx.get(f"{DRIVE_API_BASE}/files").mock(
+        return_value=httpx.Response(200, json={
+            "files": [{
+                "id": "F2",
+                "name": "usage.json",
+                "modifiedTime": "2026-05-22T10:00:00.000Z",
+            }],
+        }),
+    )
+    respx.get(f"{DRIVE_API_BASE}/files/F2").mock(
+        return_value=httpx.Response(200, content=body, headers={"ETag": "e"}),
+    )
+
+    with pytest.raises(DriveCorruptedError):
+        await _drive_get_usage(access_token="tok")
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_drive_get_usage_raises_on_non_numeric_cost() -> None:
+    """cost_usd must be numeric (int or float). Strings or booleans reject."""
+    from soyle.core.cloud_sync import _drive_get_usage
+
+    body = (
+        b'{"2026-05-22": {"dev-A": {"cost_usd": "not-a-number", "requests": 1}}}'
+    )
+
+    respx.get(f"{DRIVE_API_BASE}/files").mock(
+        return_value=httpx.Response(200, json={
+            "files": [{
+                "id": "F2",
+                "name": "usage.json",
+                "modifiedTime": "2026-05-22T10:00:00.000Z",
+            }],
+        }),
+    )
+    respx.get(f"{DRIVE_API_BASE}/files/F2").mock(
+        return_value=httpx.Response(200, content=body, headers={"ETag": "e"}),
+    )
+
+    with pytest.raises(DriveCorruptedError):
+        await _drive_get_usage(access_token="tok")
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_drive_get_usage_accepts_valid_v2_payload() -> None:
+    """Sanity check: a well-formed v2 payload still passes validation."""
+    from soyle.core.cloud_sync import _drive_get_usage
+
+    body = (
+        b'{"2026-05-22": {"dev-A": {"cost_usd": 0.05, "requests": 2}, '
+        b'"dev-B": {"cost_usd": 0.10, "requests": 4}}}'
+    )
+
+    respx.get(f"{DRIVE_API_BASE}/files").mock(
+        return_value=httpx.Response(200, json={
+            "files": [{
+                "id": "F2",
+                "name": "usage.json",
+                "modifiedTime": "2026-05-22T10:00:00.000Z",
+            }],
+        }),
+    )
+    respx.get(f"{DRIVE_API_BASE}/files/F2").mock(
+        return_value=httpx.Response(200, content=body, headers={"ETag": "e"}),
+    )
+
+    data, _meta = await _drive_get_usage(access_token="tok")
+    assert data == {
+        "2026-05-22": {
+            "dev-A": {"cost_usd": 0.05, "requests": 2},
+            "dev-B": {"cost_usd": 0.10, "requests": 4},
+        },
+    }
+
+
 @pytest.mark.asyncio
 @respx.mock
 async def test_drive_put_usage_creates_when_no_etag() -> None:
