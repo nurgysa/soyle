@@ -1127,7 +1127,10 @@ async def _drive_put_config(
             }
             resp = await client.post(
                 f"{DRIVE_UPLOAD_BASE}/files",
-                params={"uploadType": "multipart"},
+                params={
+                    "uploadType": "multipart",
+                    "fields": "id,modifiedTime",
+                },
                 files=files,
             )
             resp.raise_for_status()
@@ -1135,7 +1138,9 @@ async def _drive_put_config(
             return _RemoteMeta(
                 file_id=body_json["id"],
                 etag=resp.headers.get("ETag"),
-                modified_time=datetime.now(UTC),
+                modified_time=_parse_drive_modified_time(
+                    body_json, datetime.now(UTC),
+                ),
             )
 
         update_headers = {"Content-Type": "application/toml"}
@@ -1143,7 +1148,7 @@ async def _drive_put_config(
             update_headers["If-Match"] = etag
         resp = await client.patch(
             f"{DRIVE_UPLOAD_BASE}/files/{file_id}",
-            params={"uploadType": "media"},
+            params={"uploadType": "media", "fields": "id,modifiedTime"},
             content=body,
             headers=update_headers,
         )
@@ -1155,7 +1160,9 @@ async def _drive_put_config(
         return _RemoteMeta(
             file_id=file_id,
             etag=resp.headers.get("ETag"),
-            modified_time=datetime.now(UTC),
+            modified_time=_parse_drive_modified_time(
+                resp.json(), datetime.now(UTC),
+            ),
         )
 
 
@@ -1164,6 +1171,77 @@ def _serialize_usage_for_drive(data: dict[str, object]) -> bytes:
     return json.dumps(data, ensure_ascii=False, separators=(",", ":")).encode(
         "utf-8",
     )
+
+
+def _parse_drive_modified_time(
+    body_json: dict[str, object], fallback: datetime,
+) -> datetime:
+    """Extract Drive's authoritative modifiedTime from an upload response.
+
+    Per codex P1 review on PR #28: using ``datetime.now(UTC)`` as the
+    local stamp creates clock-skew bugs in LWW comparisons on the next
+    sync cycle. Real Drive responses include ``modifiedTime`` when the
+    request specifies ``fields=id,modifiedTime``. We fall back to the
+    provided datetime only for test fixtures that mock without it.
+    """
+    iso = body_json.get("modifiedTime")
+    if not isinstance(iso, str):
+        return fallback
+    try:
+        return datetime.fromisoformat(iso.replace("Z", "+00:00"))
+    except ValueError:
+        return fallback
+
+
+def _validate_v2_usage_shape(parsed: dict[str, object], file_id: str) -> None:
+    """Raise DriveCorruptedError if `parsed` doesn't look like v2 shape:
+    ``{date_str: {device_id: {"cost_usd": number, "requests": int}}}``.
+
+    Per codex P2 review on PR #28: the bare ``isinstance(parsed, dict)``
+    check accepted malformed payloads like ``{"2026-05-22": 1}`` whose
+    values flow through to ``_merge_usage`` / ``UsageTracker`` and crash
+    later. Validating the nested shape here funnels the recovery into
+    the existing rename-broken path.
+    """
+    for date_str, date_entry in parsed.items():
+        if not isinstance(date_entry, dict):
+            raise DriveCorruptedError(
+                file_id,
+                TypeError(
+                    f"usage[{date_str!r}] is {type(date_entry).__name__}, "
+                    "expected dict"
+                ),
+            )
+        for device_id, bucket in date_entry.items():
+            if not isinstance(bucket, dict):
+                raise DriveCorruptedError(
+                    file_id,
+                    TypeError(
+                        f"usage[{date_str!r}][{device_id!r}] is "
+                        f"{type(bucket).__name__}, expected dict"
+                    ),
+                )
+            cost = bucket.get("cost_usd")
+            reqs = bucket.get("requests")
+            # cost_usd must be numeric (int or float); requests must be int
+            # (bool is intentionally rejected — `isinstance(True, int)` is
+            # True in Python so check explicitly).
+            if not isinstance(cost, (int, float)) or isinstance(cost, bool):
+                raise DriveCorruptedError(
+                    file_id,
+                    TypeError(
+                        f"usage[{date_str!r}][{device_id!r}]['cost_usd'] "
+                        "is not numeric"
+                    ),
+                )
+            if not isinstance(reqs, int) or isinstance(reqs, bool):
+                raise DriveCorruptedError(
+                    file_id,
+                    TypeError(
+                        f"usage[{date_str!r}][{device_id!r}]['requests'] "
+                        "is not int"
+                    ),
+                )
 
 
 async def _drive_get_usage(
@@ -1216,6 +1294,7 @@ async def _drive_get_usage(
         raise DriveCorruptedError(
             file_id, TypeError(f"usage root is {type(parsed).__name__}, expected dict"),
         )
+    _validate_v2_usage_shape(parsed, file_id)
 
     return parsed, _RemoteMeta(
         file_id=file_id, etag=etag, modified_time=modified_dt,
@@ -1247,7 +1326,10 @@ async def _drive_put_usage(
             }
             resp = await client.post(
                 f"{DRIVE_UPLOAD_BASE}/files",
-                params={"uploadType": "multipart"},
+                params={
+                    "uploadType": "multipart",
+                    "fields": "id,modifiedTime",
+                },
                 files=files,
             )
             resp.raise_for_status()
@@ -1255,7 +1337,9 @@ async def _drive_put_usage(
             return _RemoteMeta(
                 file_id=body_json["id"],
                 etag=resp.headers.get("ETag"),
-                modified_time=datetime.now(UTC),
+                modified_time=_parse_drive_modified_time(
+                    body_json, datetime.now(UTC),
+                ),
             )
 
         update_headers = {"Content-Type": "application/json"}
@@ -1263,7 +1347,7 @@ async def _drive_put_usage(
             update_headers["If-Match"] = etag
         resp = await client.patch(
             f"{DRIVE_UPLOAD_BASE}/files/{file_id}",
-            params={"uploadType": "media"},
+            params={"uploadType": "media", "fields": "id,modifiedTime"},
             content=body,
             headers=update_headers,
         )
@@ -1275,7 +1359,9 @@ async def _drive_put_usage(
         return _RemoteMeta(
             file_id=file_id,
             etag=resp.headers.get("ETag"),
-            modified_time=datetime.now(UTC),
+            modified_time=_parse_drive_modified_time(
+                resp.json(), datetime.now(UTC),
+            ),
         )
 
 
