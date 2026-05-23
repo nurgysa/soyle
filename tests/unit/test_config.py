@@ -1,7 +1,7 @@
 """Tests for Config pydantic models."""
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -319,3 +319,67 @@ def test_cloud_sync_config_rejects_naive_datetime() -> None:
     naive = datetime(2026, 4, 30, 12, 0, 0)  # no tzinfo
     with pytest.raises(ValueError):
         CloudSyncConfig(last_synced_at=naive)
+
+
+# ---- Phase 2: Cloud sync push-hook + apply_synced_overrides ----
+
+
+def test_mtime_returns_timezone_aware_utc_datetime(tmp_path: Path) -> None:
+    """mtime() reads file's modified time as aware UTC datetime."""
+    path = tmp_path / "config.toml"
+    path.write_text("version = 1\n", encoding="utf-8")
+    store = ConfigStore(config_path=path)
+
+    result = store.mtime()
+    assert result.tzinfo is not None
+    assert result.utcoffset() == timedelta(0)
+
+
+def test_mtime_raises_when_file_does_not_exist(tmp_path: Path) -> None:
+    """Calling mtime() before any save() raises FileNotFoundError."""
+    store = ConfigStore(config_path=tmp_path / "missing.toml")
+    with pytest.raises(FileNotFoundError):
+        store.mtime()
+
+
+def test_apply_synced_overrides_writes_remote_config(tmp_path: Path) -> None:
+    """apply_synced_overrides persists the remote Config verbatim."""
+    path = tmp_path / "config.toml"
+    store = ConfigStore(config_path=path)
+    _ = store.load()
+
+    remote = Config()
+    remote.hotkey.combination = "ctrl+shift"
+    remote.postprocess.mode = "rewrite"
+
+    store.apply_synced_overrides(remote)
+
+    reloaded = ConfigStore(config_path=path).load()
+    assert reloaded.hotkey.combination == "ctrl+shift"
+    assert reloaded.postprocess.mode == "rewrite"
+
+
+def test_save_invokes_push_hook_when_registered(tmp_path: Path) -> None:
+    """set_push_hook + save → hook called once."""
+    store = ConfigStore(config_path=tmp_path / "config.toml")
+    calls: list[int] = []
+    store.set_push_hook(lambda: calls.append(1))
+
+    cfg = store.load()
+    cfg.hotkey.combination = "ctrl+alt"
+    store.save(cfg)
+
+    assert calls == [1]
+
+
+def test_save_does_not_invoke_push_hook_when_not_registered(
+    tmp_path: Path,
+) -> None:
+    """save() without a push hook works as before (no AttributeError)."""
+    store = ConfigStore(config_path=tmp_path / "config.toml")
+    cfg = store.load()
+    cfg.hotkey.combination = "ctrl+alt"
+    store.save(cfg)
+
+    reloaded = ConfigStore(config_path=tmp_path / "config.toml").load()
+    assert reloaded.hotkey.combination == "ctrl+alt"

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import contextlib
 import tomllib
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
@@ -166,6 +167,7 @@ class ConfigStore:
         # ConfigStore constructed later will report is_first_run=False
         # because by then load() has written the default config.
         self._existed_at_init = self._path.exists()
+        self._push_hook: Callable[[], None] | None = None
 
     @property
     def path(self) -> Path:
@@ -195,6 +197,8 @@ class ConfigStore:
     def save(self, config: Config) -> None:
         self._ensure_parent()
         self._write(config)
+        if self._push_hook is not None:
+            self._push_hook()
 
     def reset_to_defaults(self) -> Config:
         if self._path.exists():
@@ -202,6 +206,32 @@ class ConfigStore:
         cfg = Config()
         self._write(cfg)
         return cfg
+
+    def mtime(self) -> datetime:
+        """Config file's modified time as aware UTC datetime.
+
+        Used by CloudSync to compare local vs Drive modifiedTime when
+        deciding push-vs-pull direction. Raises FileNotFoundError if the
+        config has never been written.
+        """
+        stat = self._path.stat()
+        return datetime.fromtimestamp(stat.st_mtime, tz=UTC)
+
+    def apply_synced_overrides(self, remote: Config) -> None:
+        """Replace on-disk config with `remote`, then trigger any push
+        hook just like a normal save would.
+
+        Called by CloudSync after a successful pull. `remote` already
+        has deny-list paths overlaid from local by `_merge_config`, so
+        writing it verbatim is safe — no further merging at this layer.
+        """
+        self.save(remote)
+
+    def set_push_hook(self, hook: Callable[[], None] | None) -> None:
+        """Register a callable invoked synchronously at the end of every
+        save(). Used by CloudSync to schedule a debounced push after the
+        user changes settings. Pass None to clear."""
+        self._push_hook = hook
 
     # --- internals ---
 
