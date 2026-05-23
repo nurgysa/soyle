@@ -1288,3 +1288,300 @@ def test_device_id_set_failure_preserves_active_fallback(
     second = cs._device_id()
     assert second == "fallback-A"
     assert second == first
+
+
+# ---- Task 4: deny-list + dotted-path helpers ----
+
+def test_config_deny_list_contains_expected_device_local_paths() -> None:
+    from soyle.core import cloud_sync as cs
+    expected = {
+        "version",
+        "audio.device",
+        "whisper.model",
+        "whisper.device",
+        "whisper.compute_type",
+        "behavior.autostart",
+        "behavior.inject_method",
+        "ui.theme",
+        "cloud_sync",
+    }
+    assert frozenset(expected) == cs._CONFIG_DENY_LIST
+
+
+def test_get_dotted_returns_value_at_nested_path() -> None:
+    from soyle.core.cloud_sync import _get_dotted
+    data = {"hotkey": {"combination": "right alt", "mode": "push_to_talk"}}
+    assert _get_dotted(data, "hotkey.combination") == "right alt"
+
+
+def test_get_dotted_returns_top_level_value_for_single_segment() -> None:
+    from soyle.core.cloud_sync import _get_dotted
+    data = {"version": 1, "hotkey": {"combination": "right alt"}}
+    assert _get_dotted(data, "version") == 1
+
+
+def test_get_dotted_returns_none_when_path_missing() -> None:
+    from soyle.core.cloud_sync import _get_dotted
+    data = {"hotkey": {"combination": "right alt"}}
+    assert _get_dotted(data, "audio.device") is None
+    assert _get_dotted(data, "hotkey.nonexistent") is None
+
+
+def test_set_dotted_creates_intermediate_dicts_when_missing() -> None:
+    from soyle.core.cloud_sync import _set_dotted
+    data: dict = {}
+    _set_dotted(data, "audio.device", "default")
+    assert data == {"audio": {"device": "default"}}
+
+
+def test_set_dotted_overwrites_existing_value() -> None:
+    from soyle.core.cloud_sync import _set_dotted
+    data: dict = {"audio": {"device": "old"}}
+    _set_dotted(data, "audio.device", "new")
+    assert data["audio"]["device"] == "new"
+
+
+def test_set_dotted_handles_top_level_path() -> None:
+    from soyle.core.cloud_sync import _set_dotted
+    data: dict = {"hotkey": {"combination": "alt"}}
+    _set_dotted(data, "version", 2)
+    assert data["version"] == 2
+
+
+def test_del_dotted_removes_leaf_value() -> None:
+    from soyle.core.cloud_sync import _del_dotted
+    data: dict = {"audio": {"device": "default", "sample_rate": 16000}}
+    _del_dotted(data, "audio.device")
+    assert data == {"audio": {"sample_rate": 16000}}
+
+
+def test_del_dotted_removes_entire_section_when_path_is_section_root() -> None:
+    """Deleting 'cloud_sync' removes the whole [cloud_sync] section."""
+    from soyle.core.cloud_sync import _del_dotted
+    data: dict = {
+        "hotkey": {"combination": "alt"},
+        "cloud_sync": {"last_synced_at": "2026-05-22T10:00:00+00:00"},
+    }
+    _del_dotted(data, "cloud_sync")
+    assert "cloud_sync" not in data
+    assert "hotkey" in data
+
+
+def test_del_dotted_silent_when_path_missing() -> None:
+    """No-op (no exception) if the path doesn't exist."""
+    from soyle.core.cloud_sync import _del_dotted
+    data: dict = {"hotkey": {"combination": "alt"}}
+    _del_dotted(data, "audio.device")  # should not raise
+    assert data == {"hotkey": {"combination": "alt"}}
+
+
+# ---- Task 5: _strip_deny ----
+
+def _make_config_with_overrides(**overrides: object):
+    """Build a Config with selected non-default fields. Returns the Config."""
+    from soyle.core.config import (
+        AudioConfig,
+        BehaviorConfig,
+        CloudSyncConfig,
+        Config,
+        HotkeyConfig,
+        PostProcessConfig,
+        UIConfig,
+        WhisperConfig,
+    )
+    cfg = Config(
+        hotkey=HotkeyConfig(**overrides.get("hotkey", {})),
+        audio=AudioConfig(**overrides.get("audio", {})),
+        whisper=WhisperConfig(**overrides.get("whisper", {})),
+        postprocess=PostProcessConfig(**overrides.get("postprocess", {})),
+        ui=UIConfig(**overrides.get("ui", {})),
+        behavior=BehaviorConfig(**overrides.get("behavior", {})),
+        cloud_sync=CloudSyncConfig(**overrides.get("cloud_sync", {})),
+    )
+    return cfg
+
+
+def test_strip_deny_removes_all_listed_dotted_paths() -> None:
+    from soyle.core.cloud_sync import _strip_deny
+
+    cfg = _make_config_with_overrides(
+        audio={"device": "MyMic"},
+        whisper={"model": "large-v3", "device": "cuda", "compute_type": "float16"},
+        behavior={"autostart": True, "inject_method": "keystroke"},
+        ui={"theme": "light"},
+    )
+    stripped = _strip_deny(cfg)
+
+    assert "version" not in stripped
+    assert "device" not in stripped.get("audio", {})
+    assert "model" not in stripped.get("whisper", {})
+    assert "device" not in stripped.get("whisper", {})
+    assert "compute_type" not in stripped.get("whisper", {})
+    assert "autostart" not in stripped.get("behavior", {})
+    assert "inject_method" not in stripped.get("behavior", {})
+    assert "theme" not in stripped.get("ui", {})
+    assert "cloud_sync" not in stripped
+
+
+def test_strip_deny_preserves_synced_fields() -> None:
+    from soyle.core.cloud_sync import _strip_deny
+
+    cfg = _make_config_with_overrides(
+        hotkey={"combination": "ctrl+shift"},
+        postprocess={"mode": "rewrite", "model": "google/gemini-2.5-flash"},
+        ui={"sound_enabled": False},
+    )
+    stripped = _strip_deny(cfg)
+
+    assert stripped["hotkey"]["combination"] == "ctrl+shift"
+    assert stripped["postprocess"]["mode"] == "rewrite"
+    assert stripped["postprocess"]["model"] == "google/gemini-2.5-flash"
+    assert stripped["ui"]["sound_enabled"] is False
+
+
+def test_strip_deny_returns_dict_not_pydantic_model() -> None:
+    """Returns a plain dict (Pydantic dump shape) suitable for TOML serialize."""
+    from soyle.core.cloud_sync import _strip_deny
+    cfg = _make_config_with_overrides()
+    stripped = _strip_deny(cfg)
+    assert isinstance(stripped, dict)
+
+
+# ---- Task 6: _merge_config ----
+
+def test_merge_config_remote_wins_when_remote_mtime_newer() -> None:
+    from soyle.core.cloud_sync import _merge_config
+
+    local = _make_config_with_overrides(hotkey={"combination": "alt"})
+    remote = _make_config_with_overrides(hotkey={"combination": "ctrl"})
+    local_mtime = datetime(2026, 5, 22, 10, 0, 0, tzinfo=UTC)
+    remote_mtime = datetime(2026, 5, 22, 11, 0, 0, tzinfo=UTC)
+
+    merged = _merge_config(local, remote, local_mtime, remote_mtime)
+    assert merged.hotkey.combination == "ctrl"
+
+
+def test_merge_config_local_wins_when_local_mtime_newer() -> None:
+    from soyle.core.cloud_sync import _merge_config
+
+    local = _make_config_with_overrides(hotkey={"combination": "alt"})
+    remote = _make_config_with_overrides(hotkey={"combination": "ctrl"})
+    local_mtime = datetime(2026, 5, 22, 11, 0, 0, tzinfo=UTC)
+    remote_mtime = datetime(2026, 5, 22, 10, 0, 0, tzinfo=UTC)
+
+    merged = _merge_config(local, remote, local_mtime, remote_mtime)
+    assert merged.hotkey.combination == "alt"
+
+
+def test_merge_config_preserves_deny_list_from_local_when_remote_wins() -> None:
+    """Even when remote wins on mtime, deny-list fields stay local."""
+    from soyle.core.cloud_sync import _merge_config
+
+    local = _make_config_with_overrides(
+        whisper={"model": "small"},
+        hotkey={"combination": "alt"},
+    )
+    remote = _make_config_with_overrides(
+        whisper={"model": "large-v3"},
+        hotkey={"combination": "ctrl"},
+    )
+    local_mtime = datetime(2026, 5, 22, 10, 0, 0, tzinfo=UTC)
+    remote_mtime = datetime(2026, 5, 22, 11, 0, 0, tzinfo=UTC)
+
+    merged = _merge_config(local, remote, local_mtime, remote_mtime)
+    assert merged.hotkey.combination == "ctrl"
+    assert merged.whisper.model == "small"
+
+
+def test_merge_config_preserves_cloud_sync_section_from_local() -> None:
+    """The entire cloud_sync section stays local — per-device state."""
+    from soyle.core.cloud_sync import _merge_config
+
+    local = _make_config_with_overrides(
+        cloud_sync={"last_synced_at": datetime(2026, 5, 22, 12, tzinfo=UTC)},
+    )
+    remote = _make_config_with_overrides(
+        cloud_sync={"last_synced_at": datetime(2020, 1, 1, tzinfo=UTC)},
+    )
+    local_mtime = datetime(2026, 5, 22, 10, 0, 0, tzinfo=UTC)
+    remote_mtime = datetime(2026, 5, 22, 11, 0, 0, tzinfo=UTC)
+
+    merged = _merge_config(local, remote, local_mtime, remote_mtime)
+    assert merged.cloud_sync.last_synced_at == datetime(
+        2026, 5, 22, 12, tzinfo=UTC,
+    )
+
+
+def test_merge_config_version_stays_local() -> None:
+    """version is in deny-list — local schema version is authoritative."""
+    from soyle.core.cloud_sync import _merge_config
+
+    local = _make_config_with_overrides()
+    remote = _make_config_with_overrides()
+    merged = _merge_config(
+        local, remote,
+        datetime(2026, 5, 22, 10, tzinfo=UTC),
+        datetime(2026, 5, 22, 11, tzinfo=UTC),
+    )
+    assert merged.version == local.version
+
+
+# ---- Task 7: _merge_usage ----
+
+def test_merge_usage_per_device_lww_no_conflict_on_own_keys() -> None:
+    """A device only writes its own keys — same (date, device_id) tuple
+    never has competing values from two writers."""
+    from soyle.core.cloud_sync import _merge_usage
+
+    local = {"2026-05-22": {"dev-A": {"cost_usd": 0.05, "requests": 2}}}
+    remote = {"2026-05-22": {"dev-A": {"cost_usd": 0.03, "requests": 1}}}
+    # local owns dev-A's key; merge takes local's value
+    merged = _merge_usage(local, remote)
+    assert merged["2026-05-22"]["dev-A"] == {"cost_usd": 0.05, "requests": 2}
+
+
+def test_merge_usage_picks_up_remote_device_entries_verbatim() -> None:
+    from soyle.core.cloud_sync import _merge_usage
+
+    local = {"2026-05-22": {"dev-A": {"cost_usd": 0.05, "requests": 2}}}
+    remote = {"2026-05-22": {"dev-B": {"cost_usd": 0.07, "requests": 3}}}
+
+    merged = _merge_usage(local, remote)
+
+    assert merged["2026-05-22"] == {
+        "dev-A": {"cost_usd": 0.05, "requests": 2},
+        "dev-B": {"cost_usd": 0.07, "requests": 3},
+    }
+
+
+def test_merge_usage_unions_dates_across_devices() -> None:
+    from soyle.core.cloud_sync import _merge_usage
+
+    local = {"2026-05-22": {"dev-A": {"cost_usd": 0.05, "requests": 2}}}
+    remote = {"2026-05-21": {"dev-B": {"cost_usd": 0.03, "requests": 1}}}
+
+    merged = _merge_usage(local, remote)
+
+    assert merged == {
+        "2026-05-21": {"dev-B": {"cost_usd": 0.03, "requests": 1}},
+        "2026-05-22": {"dev-A": {"cost_usd": 0.05, "requests": 2}},
+    }
+
+
+def test_merge_usage_empty_local_returns_remote_copy() -> None:
+    from soyle.core.cloud_sync import _merge_usage
+
+    remote = {"2026-05-22": {"dev-B": {"cost_usd": 0.07, "requests": 3}}}
+    merged = _merge_usage({}, remote)
+    assert merged == remote
+    # Independent — mutation of merged must not leak back to remote
+    merged["2026-05-22"]["dev-B"]["cost_usd"] = 999.0
+    assert remote["2026-05-22"]["dev-B"]["cost_usd"] == 0.07
+
+
+def test_merge_usage_empty_remote_returns_local_copy() -> None:
+    from soyle.core.cloud_sync import _merge_usage
+
+    local = {"2026-05-22": {"dev-A": {"cost_usd": 0.05, "requests": 2}}}
+    merged = _merge_usage(local, {})
+    assert merged == local

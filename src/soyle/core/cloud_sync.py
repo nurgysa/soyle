@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import base64
 import contextlib
+import copy
 import enum
 import hashlib
 import json
@@ -26,7 +27,11 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from http.server import BaseHTTPRequestHandler
 from queue import Empty, Queue
+from typing import TYPE_CHECKING
 from urllib.parse import parse_qs, urlencode, urlparse
+
+if TYPE_CHECKING:
+    from soyle.core.config import Config
 
 import httpx
 import keyring
@@ -350,6 +355,120 @@ def _device_id() -> str:
     # Persisted successfully — also cache for read-fail recovery.
     _DEVICE_ID_LAST_KNOWN = new_id
     return new_id
+
+
+# ---- Phase 2: Config deny-list + dotted-path helpers ------------------------
+
+# Dotted paths from Config root that are NEVER synced — these stay per-device.
+# Format matches Pydantic model_dump keys: top-level section + dot + field,
+# or just the section name to skip the entire section.
+_CONFIG_DENY_LIST: frozenset[str] = frozenset({
+    "version",                 # schema metadata, not a user preference
+    "audio.device",            # mic name differs per machine
+    "whisper.model",           # GPU tier dictates which preset is usable
+    "whisper.device",          # cuda/cpu/auto — hardware-bound
+    "whisper.compute_type",    # int8/float16 — GPU-dependent
+    "behavior.autostart",      # often true on one machine, false on another
+    "behavior.inject_method",  # clipboard/keystroke — per-app workarounds vary
+    "ui.theme",                # monitor-dependent preference
+    "cloud_sync",              # entire section: per-device last_synced_at state
+})
+
+
+def _get_dotted(data: dict[str, object], path: str) -> object:
+    """Look up `path` in `data` ("foo.bar.baz"); return None if missing."""
+    parts = path.split(".")
+    current: object = data
+    for part in parts:
+        if not isinstance(current, dict) or part not in current:
+            return None
+        current = current[part]
+    return current
+
+
+def _set_dotted(data: dict[str, object], path: str, value: object) -> None:
+    """Set `path` in `data` to `value`. Creates intermediate dicts."""
+    parts = path.split(".")
+    cursor: dict[str, object] = data
+    for part in parts[:-1]:
+        next_level = cursor.get(part)
+        if not isinstance(next_level, dict):
+            next_level = {}
+            cursor[part] = next_level
+        cursor = next_level
+    cursor[parts[-1]] = value
+
+
+def _del_dotted(data: dict[str, object], path: str) -> None:
+    """Remove `path` from `data` if present; silent no-op otherwise."""
+    parts = path.split(".")
+    cursor: dict[str, object] = data
+    for part in parts[:-1]:
+        next_level = cursor.get(part)
+        if not isinstance(next_level, dict):
+            return
+        cursor = next_level
+    cursor.pop(parts[-1], None)
+
+
+def _strip_deny(config: Config) -> dict[str, object]:
+    """Serialize Config to dict, then remove every deny-list path.
+
+    The returned dict is what gets uploaded to Drive — Drive never sees
+    deny-listed fields at all. Symmetric with _merge_config, which
+    overlays local's deny-list values back onto whatever winner produced.
+    """
+    raw = config.model_dump(mode="json", exclude_none=True)
+    for path in _CONFIG_DENY_LIST:
+        _del_dotted(raw, path)
+    return raw
+
+
+def _merge_config(
+    local: Config,
+    remote: Config,
+    local_mtime: datetime,
+    remote_mtime: datetime,
+) -> Config:
+    """LWW by mtime; preserve deny-list paths from local.
+
+    Whoever's mtime is newer wins the whole file. Then every deny-list
+    path is re-overlaid from local — keeping per-device fields (mic,
+    GPU tier, autostart, theme) untouched even when remote wins.
+    """
+    from soyle.core.config import Config as _Config  # local import to avoid circularity
+
+    winner = remote if remote_mtime > local_mtime else local
+    winner_raw = winner.model_dump(mode="json", exclude_none=True)
+    local_raw = local.model_dump(mode="json", exclude_none=True)
+    for path in _CONFIG_DENY_LIST:
+        local_value = _get_dotted(local_raw, path)
+        if local_value is None:
+            _del_dotted(winner_raw, path)
+        else:
+            _set_dotted(winner_raw, path, local_value)
+    return _Config.model_validate(winner_raw)
+
+
+def _merge_usage(
+    local: dict[str, dict[str, object]],
+    remote: dict[str, dict[str, object]],
+) -> dict[str, dict[str, object]]:
+    """Per-(date, device_id) LWW. Each device only writes its own keys,
+    so a "conflict" on (date, my_id) can't happen — only one device
+    writes that key. Remote-only keys (other devices' entries) carry
+    over verbatim; local entries for my_id are authoritative.
+
+    Deep-copies the result so callers can mutate freely without leaking
+    changes back to the input dicts (matters when respx mocks reuse
+    parsed bodies across test cases).
+    """
+    merged = copy.deepcopy(remote)
+    for date_str, devices in local.items():
+        merged.setdefault(date_str, {})
+        for device_id, bucket in devices.items():
+            merged[date_str][device_id] = copy.deepcopy(bucket)
+    return merged
 
 
 # ---- CloudSync coordinator --------------------------------------------------
