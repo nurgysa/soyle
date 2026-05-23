@@ -778,7 +778,10 @@ class CloudSync:
         self._token_store.clear()
         cfg = self._config_store.load()
         cfg.cloud_sync.last_synced_at = None
-        self._config_store.save(cfg)
+        # _bypass_hook: this is sync-metadata, not a user setting change —
+        # the push hook would just re-arm a debounced push that's about
+        # to silently bail on is_connected=False anyway.
+        self._config_store.save(cfg, _bypass_hook=True)
         _log.info("cloud_sync_disconnected")
 
     # -- Sync entry point -----------------------------------------------------
@@ -831,7 +834,10 @@ class CloudSync:
         if worst == SyncOutcome.OK:
             cfg = self._config_store.load()
             cfg.cloud_sync.last_synced_at = datetime.now(UTC)
-            self._config_store.save(cfg)
+            # _bypass_hook: sync metadata write must not re-trigger the
+            # debounced push hook, or every successful sync schedules
+            # another push 8s later — endless loop (codex P1 fix on PR #30).
+            self._config_store.save(cfg, _bypass_hook=True)
 
         _log.info(
             "cloud_sync_round_trip_done",
@@ -1213,7 +1219,10 @@ class CloudSync:
         if result.outcome == SyncOutcome.OK:
             cfg = self._config_store.load()
             cfg.cloud_sync.last_synced_at = datetime.now(UTC)
-            self._config_store.save(cfg)
+            # _bypass_hook: this metadata write is what makes the loop —
+            # without bypass, push → save → schedule_config_push →
+            # debounce → push → ... every 8 seconds forever (codex P1).
+            self._config_store.save(cfg, _bypass_hook=True)
 
     @staticmethod
     def _classify_drive_error(

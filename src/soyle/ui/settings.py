@@ -495,10 +495,17 @@ class SettingsWindow(QMainWindow):
                     local_cfg, remote_cfg, local_mtime, far_future,
                 )
                 self._store.apply_synced_overrides(merged)
+                # Codex P1 fix on PR #30: reload self._cfg so any pending
+                # _save() does NOT overwrite the just-restored values with
+                # stale widget state, and close the window so the next
+                # open() repopulates widgets from disk.
+                self._cfg = self._store.load()
                 self._toast(
                     "Söyle — Cloud Sync",
-                    "Настройки с другого устройства применены.",
+                    "Настройки с другого устройства применены. "
+                    "Открой Settings заново, чтобы увидеть значения.",
                 )
+                self.close()
 
     def _on_cloud_sync_sync_now(self) -> None:
         if self._cloud_sync is None:

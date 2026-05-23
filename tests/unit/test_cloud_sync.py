@@ -2795,6 +2795,69 @@ async def test_push_config_now_does_full_round_trip_when_connected(
     assert create.called
 
 
+@pytest.mark.asyncio
+@respx.mock
+async def test_push_config_now_does_not_rearm_debounce_timer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, qapp,
+) -> None:
+    """Codex P1 fix on PR #30: a successful debounced push updates
+    last_synced_at via config_store.save(...), and that save must NOT
+    fire the push hook — otherwise every successful _push_config_now
+    schedules another timer tick, creating an endless ~8s sync loop."""
+    cs = _make_cloud_sync(tmp_path, monkeypatch)
+    cs._token_store.save("rt")
+    cs._config_store.load()
+
+    # Register the real push hook (mirrors what app.py wires)
+    cs._config_store.set_push_hook(cs.schedule_config_push)
+
+    respx.post("https://oauth2.googleapis.com/token").mock(
+        return_value=httpx.Response(200, json={"access_token": "tok"}),
+    )
+    respx.get(f"{_DRIVE_API_BASE}/files").mock(
+        return_value=httpx.Response(200, json={"files": []}),
+    )
+    respx.post(f"{_DRIVE_UPLOAD_BASE}/files").mock(
+        return_value=httpx.Response(200, json={"id": "X"}),
+    )
+
+    # Before: timer not armed
+    assert not cs._config_push_timer.isActive()
+
+    await cs._push_config_now()
+
+    # After: timer still NOT armed — sync metadata write bypassed the hook
+    assert not cs._config_push_timer.isActive()
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_sync_now_does_not_rearm_debounce_timer_on_success(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, qapp,
+) -> None:
+    """Same contract on the daily sync_now path: a successful scheduled
+    sync writes last_synced_at to disk; that write must NOT re-arm the
+    debounced push or every daily sync schedules an immediate push."""
+    cs = _make_cloud_sync(tmp_path, monkeypatch)
+    cs._token_store.save("rt")
+    cs._config_store.load()
+    cs._config_store.set_push_hook(cs.schedule_config_push)
+
+    respx.post("https://oauth2.googleapis.com/token").mock(
+        return_value=httpx.Response(200, json={"access_token": "tok"}),
+    )
+    respx.get(f"{_DRIVE_API_BASE}/files").mock(
+        return_value=httpx.Response(200, json={"files": []}),
+    )
+    respx.post(f"{_DRIVE_UPLOAD_BASE}/files").mock(
+        return_value=httpx.Response(200, json={"id": "X"}),
+    )
+
+    assert not cs._config_push_timer.isActive()
+    await cs.sync_now()
+    assert not cs._config_push_timer.isActive()
+
+
 # ---- Task 16: settings restore probe ----
 
 @pytest.mark.asyncio
