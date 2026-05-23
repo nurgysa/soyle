@@ -1087,6 +1087,7 @@ def test_device_id_falls_back_to_process_uuid_when_get_raises(
 
     monkeypatch.setattr(cs.keyring, "get_password", raising_get)
     monkeypatch.setattr(cs, "_DEVICE_ID_FALLBACK", None)  # reset cache
+    monkeypatch.setattr(cs, "_DEVICE_ID_LAST_KNOWN", None)
 
     result = cs._device_id()
 
@@ -1110,6 +1111,7 @@ def test_device_id_falls_back_to_process_uuid_when_set_raises(
 
     monkeypatch.setattr(cs.keyring, "set_password", raising_set)
     monkeypatch.setattr(cs, "_DEVICE_ID_FALLBACK", None)
+    monkeypatch.setattr(cs, "_DEVICE_ID_LAST_KNOWN", None)
 
     result = cs._device_id()
     assert _uuid.UUID(result).version == 4
@@ -1127,6 +1129,7 @@ def test_device_id_fallback_is_stable_within_process(
 
     monkeypatch.setattr(cs.keyring, "get_password", raising_get)
     monkeypatch.setattr(cs, "_DEVICE_ID_FALLBACK", None)
+    monkeypatch.setattr(cs, "_DEVICE_ID_LAST_KNOWN", None)
 
     first = cs._device_id()
     second = cs._device_id()
@@ -1145,6 +1148,103 @@ def test_device_id_no_keyring_error_subclass_also_falls_back(
 
     monkeypatch.setattr(cs.keyring, "get_password", raising_get)
     monkeypatch.setattr(cs, "_DEVICE_ID_FALLBACK", None)
+    monkeypatch.setattr(cs, "_DEVICE_ID_LAST_KNOWN", None)
 
     result = cs._device_id()
     assert _uuid.UUID(result).version == 4
+
+
+# ---- Device identity: transient-failure consistency ----
+
+def test_device_id_returns_last_known_after_transient_keyring_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Same process: successful read → transient KeyringError → must
+    return the SAME real ID, not mint a new fallback."""
+    from soyle.core import cloud_sync as cs
+
+    real_id = "11111111-2222-3333-4444-555555555555"
+    call_count = {"n": 0}
+
+    def flaky_get(service: str, user: str) -> str | None:
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            return real_id  # first call succeeds
+        raise cs.keyring.errors.KeyringError("transient")  # rest fail
+
+    monkeypatch.setattr(cs.keyring, "get_password", flaky_get)
+    monkeypatch.setattr(cs, "_DEVICE_ID_FALLBACK", None)
+    monkeypatch.setattr(cs, "_DEVICE_ID_LAST_KNOWN", None)
+
+    first = cs._device_id()  # successful read
+    second = cs._device_id()  # transient failure
+    third = cs._device_id()  # still failing
+
+    assert first == real_id
+    assert second == real_id  # reused last-known, NOT a fresh UUID
+    assert third == real_id
+
+
+def test_device_id_cold_start_fallback_replaced_by_real_id_when_keyring_recovers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Cold start with broken keyring → fallback used. Once keyring
+    recovers and we read a real ID, subsequent failures must return
+    the REAL id, not the original cold-start fallback."""
+    from soyle.core import cloud_sync as cs
+
+    real_id = "11111111-2222-3333-4444-555555555555"
+    call_count = {"n": 0}
+
+    def staged_get(service: str, user: str) -> str | None:
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            raise cs.keyring.errors.KeyringError("cold start fail")
+        if call_count["n"] == 2:
+            return real_id  # recovered
+        raise cs.keyring.errors.KeyringError("flaky again")
+
+    monkeypatch.setattr(cs.keyring, "get_password", staged_get)
+    monkeypatch.setattr(cs, "_DEVICE_ID_FALLBACK", None)
+    monkeypatch.setattr(cs, "_DEVICE_ID_LAST_KNOWN", None)
+
+    cold_fallback = cs._device_id()  # cold-start fallback minted
+    recovered = cs._device_id()       # real ID seen
+    after_recovery_fail = cs._device_id()  # keyring fails again
+
+    assert _uuid.UUID(cold_fallback).version == 4
+    assert recovered == real_id
+    # After we saw a real ID, transient failures use the real ID,
+    # NOT the original cold-start fallback.
+    assert after_recovery_fail == real_id
+    assert after_recovery_fail != cold_fallback
+
+
+def test_device_id_set_failure_path_also_populates_last_known(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """If a fresh device mints a UUID and set_password fails, the
+    minted ID becomes both the fallback AND the last-known so that
+    a subsequent read-fail returns the same value."""
+    from soyle.core import cloud_sync as cs
+
+    monkeypatch.setattr(
+        cs.keyring, "get_password",
+        lambda service, user: None,  # never persisted
+    )
+
+    def raising_set(service: str, user: str, pwd: str) -> None:
+        raise cs.keyring.errors.KeyringError("write blocked")
+
+    monkeypatch.setattr(cs.keyring, "set_password", raising_set)
+    monkeypatch.setattr(cs, "_DEVICE_ID_FALLBACK", None)
+    monkeypatch.setattr(cs, "_DEVICE_ID_LAST_KNOWN", None)
+
+    first = cs._device_id()
+    # Now make get_password fail too, so we hit the read-fail path
+    def raising_get(service: str, user: str) -> str | None:
+        raise cs.keyring.errors.KeyringError("now read-broken")
+    monkeypatch.setattr(cs.keyring, "get_password", raising_get)
+
+    second = cs._device_id()
+    assert second == first  # stable across both failure paths
