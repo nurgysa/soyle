@@ -215,7 +215,25 @@ class Transcriber:
                 "transcribe_decoded",
                 decoded_sec=round(time.monotonic() - t_start, 2),
                 lang=info.language,
+                lang_prob=round(info.language_probability, 3),
             )
+            # Diagnostic logging for auto-detect path. Surfaces the top-5
+            # language candidates and warns on low-confidence picks. KZ
+            # often shows up as az/tr/uz/ar in the top-5 even when the
+            # picked language is something else — this lets us see that
+            # without rebuilding the model. See research notes:
+            # docs/research/2026-05-23-kz-detection-root-cause.md
+            if self._language is None and info.all_language_probs:
+                top5 = sorted(info.all_language_probs, key=lambda x: -x[1])[:5]
+                top5_rounded = [(lang, round(p, 3)) for lang, p in top5]
+                _log.info("language_candidates", top5=top5_rounded)
+                if info.language_probability < 0.5:
+                    _log.warning(
+                        "low_confidence_detection",
+                        lang=info.language,
+                        prob=round(info.language_probability, 3),
+                        top5=top5_rounded,
+                    )
             segments = [
                 {"start": s.start, "end": s.end, "text": s.text}
                 for s in segments_iter
