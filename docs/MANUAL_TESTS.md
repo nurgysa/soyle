@@ -52,6 +52,18 @@ Run this checklist before each release. Do NOT release if anything fails.
 
 ## Code-switching и казахский
 
+> ⚠ **Текущее состояние (с 2026-05-23):** Whisper KZ recognition на
+> vanilla large-v3 ненадёжен — >55% WER даже с принудительным
+> `language='kk'`, hardware-quirk на GTX 16xx блокирует force-language
+> через CT2 hang. Поэтому секции A/B/C/E будут **проваливаться** на
+> большинстве hardware пока не выйдет dual-model fix (Variant D из
+> [docs/research/2026-05-23-kz-detection-root-cause.md](research/2026-05-23-kz-detection-root-cause.md)).
+> Секция D (LLM polish modes) проходит — она зависит только от LLM,
+> не от Whisper. Секция F (pure-EN regression) тоже проходит.
+>
+> Эти сценарии остаются в чек-листе чтобы (1) фиксировать baseline до
+> fix-а, (2) служить regression check после fix-а.
+
 Сценарии проверяют, что KZ-распознавание и KZ-сохранение работают
 во всём пайплайне Whisper → LLM. Используйте реальный микрофон —
 audio-первый pipeline единственный способ протестировать Whisper-слой.

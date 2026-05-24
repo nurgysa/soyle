@@ -111,21 +111,26 @@ class DictionaryStore:
     # ---- Rendering helpers for callers ----
 
     def as_whisper_prompt(self) -> str:
-        """Return a Whisper-friendly hint string with language + glossary.
+        """Return a Whisper-friendly hint string from the user's glossary.
 
-        Always emits the "Languages: ..." prefix so auto-detect is biased
-        toward multilingual decoding even when the user's glossary is
-        empty. When terms exist, the glossary clause is appended for
-        vocabulary biasing.
+        Used as Whisper's `initial_prompt`. This affects DECODING only —
+        it biases token selection within an already-chosen language. It
+        does NOT influence language detection (detection runs on mel
+        features before the prompt is encoded — see
+        docs/research/2026-05-23-kz-detection-root-cause.md).
+
+        Prior versions prepended "Languages: Kazakh, Russian, English."
+        hoping to bias auto-detect toward multilingual. That was an
+        architectural mistake — the prefix can't reach detection. Reverted
+        so we don't feed misleading tokens to the decoder.
 
         Kept short so it fits within faster-whisper's ~224-token
-        initial_prompt budget (8 prefix tokens + up to MAX_TERMS terms).
+        initial_prompt budget.
         """
-        prefix = "Languages: Kazakh, Russian, English."
         terms = self.load()
         if not terms:
-            return prefix
-        return f"{prefix} Glossary: {', '.join(terms)}."
+            return ""
+        return f"Glossary: {', '.join(terms)}."
 
     def as_llm_instruction(self) -> str:
         """Return a clause for the LLM polish system prompt, or '' if empty."""

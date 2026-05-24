@@ -253,14 +253,16 @@ class SettingsWindow(QMainWindow):
         layout.addRow("Язык:", self._w_language)
 
         # Hint label — same muted styling as the Cloud Sync last-synced
-        # subtitle. Auto-detect is the only viable path for KZ users
-        # (kk is not in the dropdown by design — see comment above), and
-        # forcing ru/en breaks code-switching for everyone else.
+        # subtitle. Honest framing: KZ recognition is currently unreliable
+        # on this hardware. Auto-detect frequently misclassifies Kazakh
+        # speech as Russian/Arabic/Azerbaijani; forcing language="kk"
+        # would deadlock CT2 on GTX 16xx. See research notes:
+        # docs/research/2026-05-23-kz-detection-root-cause.md
         self._w_language_hint = QLabel(
-            "Auto-detect — рекомендуется для смешанной KZ+RU+EN речи. "
+            "Auto-detect рекомендуется для смешанной RU+EN речи. "
             "Принудительный выбор ru/en даёт лучше recognition "
             "строго-моноязычной диктовки, но ломает code-switching. "
-            "Казахский всегда через Auto-detect (hardware-ограничение)."
+            "Казахский пока ненадёжен — fix в работе (dual-model)."
         )
         self._w_language_hint.setStyleSheet("color: #888; font-size: 11px;")
         self._w_language_hint.setWordWrap(True)
