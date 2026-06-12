@@ -1313,19 +1313,37 @@ It currently has:
 
 The explicit type annotation `Transcriber | KzAwareTranscriber` documents the duck-typing intent so mypy understands subsequent calls (`set_initial_prompt`, `set_language`, etc.) work on both.
 
-- [ ] **Step 5: Register the failure toast callback**
+- [ ] **Step 5: Register the failure toast callback (thread-safe — codex P2 on PR #45)**
 
-The tray instance is constructed elsewhere in `__init__`. Find the line that constructs `self._tray` and add this immediately after it (or, if the existing wiring already has a `setup_tray_callbacks` style block, add it there):
+> **Threading constraint:** the callback fires synchronously inside
+> `_InferenceJob.run()` on a QRunnable worker thread. Registering
+> `self._tray.show_action_failed` directly would call
+> `QSystemTrayIcon.showMessage()` off the Qt main thread. Marshal via a
+> Qt Signal — same pattern as the existing `_inference_done` /
+> `_inference_error` / `_sync_done` signals (app.py:103-107, including
+> the comment explaining why QTimer.singleShot is NOT reliable from
+> worker QRunnables).
+
+First, add a new signal to the class-level signal block (next to `_sync_done` at app.py:103-107):
 
 ```python
-        # KzAwareTranscriber needs a callback to show a one-time toast if
-        # the KZ model fails to load. Tray's show_action_failed has the
-        # right (str) -> None signature. Cast since the wrapper holds a
-        # union type but only KzAwareTranscriber has this method.
+    _kz_toast = Signal(str)  # KZ model load-failure message (from worker thread)
+```
+
+Then connect it in `__init__` near the other signal connections:
+
+```python
+        self._kz_toast.connect(self._tray.show_action_failed)
+```
+
+Finally, register the emit — NOT the tray method — as the callback:
+
+```python
+        # KzAwareTranscriber's callback fires on the _InferenceJob worker
+        # thread. Signal.emit is thread-safe (queued connection delivers
+        # on the main thread); a direct tray call would not be.
         if isinstance(self._transcriber, KzAwareTranscriber):
-            self._transcriber.set_failure_toast_callback(
-                self._tray.show_action_failed
-            )
+            self._transcriber.set_failure_toast_callback(self._kz_toast.emit)
 ```
 
 The `isinstance` check satisfies mypy strict (the union allows `Transcriber` which lacks the method).
