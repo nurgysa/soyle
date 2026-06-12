@@ -18,6 +18,7 @@ import numpy as np
 import structlog
 from faster_whisper import WhisperModel
 
+from soyle.core.config import default_config_path
 from soyle.core.errors import CudaOOMError, CudaUnavailableError, ModelNotLoadedError
 
 _log = structlog.get_logger(__name__)
@@ -143,12 +144,12 @@ def kz_model_dir() -> Path:
     rather than the HF hub cache: faster-whisper resolves slash-containing
     model names as HF repo IDs, so a locally-converted model must be
     addressed by absolute path, not a fake repo name.
+
+    Derived from default_config_path() so the app-data root is defined
+    in exactly one place (config.py) — duplicating the platformdirs
+    call here would let the two locations silently fork.
     """
-    from platformdirs import user_config_path
-
-    from soyle.core.config import APP_SLUG
-
-    return user_config_path(APP_SLUG, appauthor=False, roaming=True) / "models" / "whisper-base-kk-ct2"
+    return default_config_path().parent / "models" / "whisper-base-kk-ct2"
 
 
 @dataclass

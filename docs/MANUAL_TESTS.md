@@ -125,14 +125,13 @@ audio-первый pipeline единственный способ протест
 
 - [ ] Произнесите старую тестовую фразу: "Привет это тестовая фраза"
       Распознавание и polish должны быть так же хороши, как до изменений.
-      (Это страховка от R1 — добавление KZ в initial_prompt не должно ухудшать pure-RU recognition.)
+      (Страховка: dual-model routing не должен трогать pure-RU путь — RU идёт через primary без re-transcribe.)
 
 ### F. Regression: pure-EN остался прежним
 
 - [ ] Произнесите: "Hello world how are you doing today"
       Pure-EN recognition + polish без регрессий.
-      (Если этот чек проседает — initial_prompt смещает auto-detect, нужно откатить
-      `as_whisper_prompt()` к старому формату или поменять порядок Languages-списка.)
+      (Если этот чек проседает — проверьте `route_to_kz` события в логе: EN не должен роутиться в KZ-модель; виновником может быть слишком агрессивный routing threshold.)
 
 ## Cloud Sync (Phase 1)
 

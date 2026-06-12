@@ -213,9 +213,7 @@ class SoyleApp(QObject):
         self._inference_done.connect(self._finish_inference)
         self._inference_error.connect(self._handle_inference_error)
         self._sync_done.connect(self._handle_sync_outcome)
-        self._kz_toast.connect(
-            lambda msg: self._tray.toast("Söyle", msg, level="warning")
-        )
+        self._kz_toast.connect(self._show_kz_toast)
 
         # KzAwareTranscriber's callback fires on the _InferenceJob worker
         # thread. Signal.emit is thread-safe (queued connection delivers
@@ -454,6 +452,15 @@ class SoyleApp(QObject):
             self._show_fallback_toast(reason)
 
         QTimer.singleShot(200, self._after_inject)
+
+    def _show_kz_toast(self, message: str) -> None:
+        """Deliver the KZ load-failure toast on the Qt main thread.
+
+        Bound-method receiver gives the documented Qt receiver-affinity
+        guarantee for cross-thread delivery (worker emit → queued to main
+        thread) — same pattern as the _inference_done/_sync_done handlers.
+        """
+        self._tray.toast("Söyle", message, level="warning")
 
     def _show_fallback_toast(self, reason: str) -> None:
         """Route per-reason user-facing messages. Auth failures are shown once

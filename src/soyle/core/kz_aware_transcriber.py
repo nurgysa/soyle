@@ -104,7 +104,7 @@ class KzAwareTranscriber:
         _InferenceJob QRunnable worker, NOT the Qt main thread. The
         registrant must marshal to the UI thread itself (emit a Qt
         Signal — see the _inference_done pattern in app.py). Passing a
-        direct UI call like tray.show_action_failed here would touch
+        direct UI call like tray.toast here would touch
         QSystemTrayIcon off the main thread (codex P2 on PR #45).
         """
         self._failure_toast_callback = cb

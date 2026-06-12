@@ -56,25 +56,41 @@ def _download_and_convert_kz() -> bool:
         )
         return False
 
-    from faster_whisper import WhisperModel  # late import — only on this path
+    from faster_whisper import WhisperModel
 
     target = kz_model_dir()
     target.parent.mkdir(parents=True, exist_ok=True)
 
+    # Convert into a sibling temp dir and swap at the end — a failed
+    # re-run (offline, HF hiccup, mid-conversion crash) must never
+    # destroy a previously working model at `target`.
+    tmp = target.with_name(target.name + ".tmp")
+    shutil.rmtree(tmp, ignore_errors=True)
+
     print(f"Downloading {KZ_HF_REPO} and converting HF → CT2 int8 into: {target}")
     try:
         converter = TransformersConverter(KZ_HF_REPO)
-        converter.convert(str(target), quantization="int8", force=True)
+        converter.convert(str(tmp), quantization="int8", force=True)
     except Exception as exc:
         print(f"ERROR: conversion failed: {exc}", file=sys.stderr)
-        # Clean partial output so a retry starts fresh.
-        shutil.rmtree(target, ignore_errors=True)
+        # Clean the partial TEMP output so a retry starts fresh; the
+        # previous good model at `target` (if any) is untouched.
+        shutil.rmtree(tmp, ignore_errors=True)
         return False
+
+    if target.exists():
+        shutil.rmtree(target)
+    tmp.rename(target)
 
     # Smoke test — load the converted artifact exactly the way app.py will.
     print("Verifying converted model loads...")
     _ = WhisperModel(str(target), device="cpu", compute_type="int8")
     print(f"Done. KZ model available at: {target}")
+    print(
+        "Note: the ~290 MB HF source copy remains in ~/.cache/huggingface/hub "
+        "(total ≈365 MB with the converted model). Delete the cache copy via "
+        "`huggingface-cli delete-cache` if disk space matters."
+    )
     return True
 
 
