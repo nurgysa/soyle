@@ -41,6 +41,21 @@ dev = [
   "types-pyperclip>=1.9.0",
   "types-pywin32>=308",
 ]
+setup = [
+  # Only needed when running scripts/download_model.py --model kz to
+  # convert the HuggingFace Transformers checkpoint (akuzdeuov/whisper-base.kk)
+  # into CTranslate2 int8 format. Not used at runtime.
+  #
+  # NOTE (codex P2 on PR #42): the converter itself —
+  # ctranslate2.converters.TransformersConverter — ships with the
+  # `ctranslate2` package, which is ALREADY a transitive dependency of
+  # faster-whisper. What a fresh env is missing is the Transformers +
+  # PyTorch stack that the converter imports to read the HF checkpoint.
+  # ("ct2-transformers-converter" is a CLI entry-point name, NOT a PyPI
+  # package — depending on it would fail resolution.)
+  "transformers>=4.40",
+  "torch>=2.4",
+]
 build = [
   "pyinstaller>=6.11.0",
   "pillow>=10.4.0",
