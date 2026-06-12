@@ -69,7 +69,14 @@ def _download_and_convert_kz() -> bool:
 
     print(f"Downloading {KZ_HF_REPO} and converting HF → CT2 int8 into: {target}")
     try:
-        converter = TransformersConverter(KZ_HF_REPO)
+        # copy_files makes the converted model SELF-CONTAINED: without it,
+        # faster-whisper re-downloads the tokenizer from HF at load time,
+        # so deleting the HF cache (which we advise below) or going
+        # offline would break KZ loading (codex P2 on PR #47).
+        converter = TransformersConverter(
+            KZ_HF_REPO,
+            copy_files=["tokenizer.json", "preprocessor_config.json"],
+        )
         converter.convert(str(tmp), quantization="int8", force=True)
     except Exception as exc:
         print(f"ERROR: conversion failed: {exc}", file=sys.stderr)
