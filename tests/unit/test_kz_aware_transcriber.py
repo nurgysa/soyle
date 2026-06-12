@@ -202,6 +202,40 @@ def test_route_at_exact_top5_threshold(audio: np.ndarray) -> None:
     assert result.raw_text == "kz output"
 
 
+def test_no_route_when_kk_above_threshold_but_outside_top5(audio: np.ndarray) -> None:
+    """kk with prob >= 0.10 but ranked 6th does NOT route.
+
+    all_language_probs is the FULL faster-whisper candidate list, not
+    pre-sliced — the router must apply the documented "top-5" bound
+    itself (codex P2 on PR #45). Five stronger candidates push kk out.
+    """
+    primary = FakeTranscriber(
+        lambda: _make_result(
+            language="de",
+            language_probability=0.95,
+            all_language_probs=[
+                ("de", 0.95),
+                ("nl", 0.30),
+                ("en", 0.25),
+                ("fr", 0.20),
+                ("sv", 0.15),
+                ("kk", 0.12),  # >= 0.10 threshold, but ranked 6th
+            ],
+        )
+    )
+    factory_calls = [0]
+
+    def factory() -> FakeTranscriber:
+        factory_calls[0] += 1
+        return FakeTranscriber(lambda: _make_result())
+
+    wrapper = KzAwareTranscriber(primary=primary, kz_factory=factory)
+    result = wrapper.transcribe(audio, 16000)
+
+    assert result.language == "de"
+    assert factory_calls[0] == 0
+
+
 # ---- Lazy load + failure handling ----
 
 

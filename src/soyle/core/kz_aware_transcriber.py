@@ -97,7 +97,16 @@ class KzAwareTranscriber:
     # ---- Wiring (called once at construction time by app.py) ----
 
     def set_failure_toast_callback(self, cb: Callable[[str], None]) -> None:
-        """Register a callback fired once per session if KZ load fails."""
+        """Register a callback fired once per session if KZ load fails.
+
+        THREADING CONTRACT: the callback is invoked synchronously from
+        whatever thread calls transcribe() — in the app that is an
+        _InferenceJob QRunnable worker, NOT the Qt main thread. The
+        registrant must marshal to the UI thread itself (emit a Qt
+        Signal — see the _inference_done pattern in app.py). Passing a
+        direct UI call like tray.show_action_failed here would touch
+        QSystemTrayIcon off the main thread (codex P2 on PR #45).
+        """
         self._failure_toast_callback = cb
 
     # ---- Internal ----
@@ -145,7 +154,12 @@ class KzAwareTranscriber:
         ):
             return "turkic_low_conf"
         if result.all_language_probs is not None:
-            for cand_lang, cand_prob in result.all_language_probs:
+            # all_language_probs is the FULL candidate list (~99 languages),
+            # not pre-sliced — sort and take the actual top five before
+            # applying the threshold, per the documented heuristic
+            # (codex P2 on PR #45).
+            top5 = sorted(result.all_language_probs, key=lambda x: -x[1])[:5]
+            for cand_lang, cand_prob in top5:
                 if cand_lang == "kk" and cand_prob >= _KZ_TOP5_MIN_PROB:
                     return "kk_in_top5"
         return None
