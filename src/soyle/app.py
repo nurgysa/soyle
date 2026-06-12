@@ -25,10 +25,11 @@ from soyle.core.dictionary import DictionaryStore
 from soyle.core.errors import AudioDeviceError
 from soyle.core.hotkey import HotkeyBox
 from soyle.core.injector import Injector
+from soyle.core.kz_aware_transcriber import KzAwareTranscriber
 from soyle.core.postprocess import PostProcess
 from soyle.core.recorder import Recorder, trim_silence_endpoints
 from soyle.core.state import State, StateMachine
-from soyle.core.transcriber import Transcriber
+from soyle.core.transcriber import Transcriber, kz_model_dir
 from soyle.core.usage import UsageTracker
 from soyle.platform.autostart import (
     disable_autostart,
@@ -59,7 +60,7 @@ class _InferenceJob(QRunnable):
 
     def __init__(
         self,
-        transcriber: Transcriber,
+        transcriber: Transcriber | KzAwareTranscriber,
         postprocess: PostProcess,
         audio: np.ndarray,
         sample_rate: int,
@@ -105,6 +106,7 @@ class SoyleApp(QObject):
     _inference_done = Signal(str, bool, str, str, float)  # text, fallback, lang, reason, cost
     _inference_error = Signal(str)  # error message
     _sync_done = Signal(object)  # cloud_sync.SyncResult
+    _kz_toast = Signal(str)  # KZ model load-failure message (from worker thread)
 
     def __init__(self, qapp: QApplication) -> None:
         super().__init__()
@@ -135,12 +137,31 @@ class SoyleApp(QObject):
 
         self._recorder = Recorder(bus=self._bus)
         self._injector = Injector(bus=self._bus, method=self._cfg.behavior.inject_method)
-        self._transcriber = Transcriber(
+        primary_transcriber = Transcriber(
             model=self._cfg.whisper.model,
             device=self._cfg.whisper.device,
             compute_type=self._cfg.whisper.compute_type,
             language=self._cfg.whisper.language,
             initial_prompt=self._dict_store.as_whisper_prompt(),
+        )
+
+        def _kz_factory() -> Transcriber:
+            # Lazy KZ-only fine-tuned model. Created on first KZ-route.
+            # Loaded by ABSOLUTE PATH from Söyle's app-data dir — NOT an
+            # HF repo id (slash-containing names trigger HF hub lookup;
+            # codex P1 on PR #42). Written by download_model.py --model kz.
+            # See docs/superpowers/specs/2026-05-24-kz-dual-model-design.md
+            return Transcriber(
+                model=str(kz_model_dir()),
+                device=self._cfg.whisper.device,
+                compute_type="int8",
+                language="kk",
+                initial_prompt=self._dict_store.as_whisper_prompt(),
+            )
+
+        self._transcriber: Transcriber | KzAwareTranscriber = KzAwareTranscriber(
+            primary=primary_transcriber,
+            kz_factory=_kz_factory,
         )
         self._postprocess = PostProcess(
             config=self._cfg.postprocess,
@@ -192,6 +213,13 @@ class SoyleApp(QObject):
         self._inference_done.connect(self._finish_inference)
         self._inference_error.connect(self._handle_inference_error)
         self._sync_done.connect(self._handle_sync_outcome)
+        self._kz_toast.connect(self._show_kz_toast)
+
+        # KzAwareTranscriber's callback fires on the _InferenceJob worker
+        # thread. Signal.emit is thread-safe (queued connection delivers
+        # on the main thread); a direct tray call would not be.
+        if isinstance(self._transcriber, KzAwareTranscriber):
+            self._transcriber.set_failure_toast_callback(self._kz_toast.emit)
 
     # ---- Lifecycle ----
 
@@ -424,6 +452,15 @@ class SoyleApp(QObject):
             self._show_fallback_toast(reason)
 
         QTimer.singleShot(200, self._after_inject)
+
+    def _show_kz_toast(self, message: str) -> None:
+        """Deliver the KZ load-failure toast on the Qt main thread.
+
+        Bound-method receiver gives the documented Qt receiver-affinity
+        guarantee for cross-thread delivery (worker emit → queued to main
+        thread) — same pattern as the _inference_done/_sync_done handlers.
+        """
+        self._tray.toast("Söyle", message, level="warning")
 
     def _show_fallback_toast(self, reason: str) -> None:
         """Route per-reason user-facing messages. Auth failures are shown once
