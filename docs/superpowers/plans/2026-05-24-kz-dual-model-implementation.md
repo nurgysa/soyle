@@ -18,7 +18,7 @@
 | `src/soyle/core/kz_aware_transcriber.py` | Create | `KzAwareTranscriber` wrapper with routing logic + lazy KZ load + failure-toast suppression |
 | `tests/unit/test_kz_aware_transcriber.py` | Create | 15 unit tests covering routing decisions, lazy loading, failure handling, API forwarding |
 | `src/soyle/app.py` | Modify (lines 138-144, ~660) | Wire `KzAwareTranscriber` instead of bare `Transcriber`; register failure toast callback |
-| `scripts/download_model.py` | Modify | Add `--model kz` flag; download from HF; convert HF→CT2; save under local cache path |
+| `scripts/download_model.py` | Modify | Add `--model kz` flag; download from HF; convert HF→CT2 into `%APPDATA%\Soyle\models\whisper-base-kk-ct2\` (via `kz_model_dir()` helper — codex P1 fix) |
 | `docs/MANUAL_TESTS.md` | Modify | Replace honest-failure disclaimer (from PR #40) with post-fix expectations and new prerequisites |
 | `pyproject.toml` | Modify | Add `setup` optional-dependencies group with `ct2-transformers-converter` |
 
@@ -909,7 +909,16 @@ setup = [
   # Only needed when running scripts/download_model.py --model kz to
   # convert the HuggingFace Transformers checkpoint (akuzdeuov/whisper-base.kk)
   # into CTranslate2 int8 format. Not used at runtime.
-  "ct2-transformers-converter>=4.0.0",
+  #
+  # NOTE (codex P2 on PR #42): the converter itself —
+  # ctranslate2.converters.TransformersConverter — ships with the
+  # `ctranslate2` package, which is ALREADY a transitive dependency of
+  # faster-whisper. What a fresh env is missing is the Transformers +
+  # PyTorch stack that the converter imports to read the HF checkpoint.
+  # ("ct2-transformers-converter" is a CLI entry-point name, NOT a PyPI
+  # package — depending on it would fail resolution.)
+  "transformers>=4.40",
+  "torch>=2.4",
 ]
 ```
 
@@ -1058,12 +1067,53 @@ Per `destructive_remote_ops`: user clicks merge, deletes branch. Codex feedback 
 
 Branch: `claude/kz-dual-model-pr-c-integration` (off main AFTER PR B merged).
 
-### Task C1: Extend `scripts/download_model.py` with `--model kz` flag
+### Task C1: `kz_model_dir()` helper + extend `scripts/download_model.py` with `--model kz`
 
 **Files:**
+- Modify: `src/soyle/core/transcriber.py` (add one helper function after `APP_SLUG`-style constants / near `WHISPER_MODELS`)
 - Modify: `scripts/download_model.py` (rewrite — currently 25 lines)
 
-- [ ] **Step 1: Replace the entire file**
+> **Codex P1 on PR #42 (design fix):** the original plan stored the
+> converted model inside the HF hub cache under a hand-built
+> `models--soyle--whisper-base-kk-ct2/snapshots/main` layout and loaded it
+> via `WhisperModel("soyle/whisper-base-kk-ct2")`. That cannot work:
+> faster-whisper treats slash-containing names as HF repo IDs and resolves
+> them via `snapshot_download` (commit-hash snapshots + `refs/` metadata) —
+> a fake `snapshots/main` directory is invisible to that lookup, and the
+> remote repo `soyle/whisper-base-kk-ct2` doesn't exist, so the loader
+> would 404 and the feature would silently stay dead.
+>
+> **Fix:** store the converted model in Söyle's own app data directory
+> (`%APPDATA%\Soyle\models\whisper-base-kk-ct2\`) and pass the **absolute
+> directory path** to `WhisperModel(...)` — faster-whisper loads local
+> directories directly, no HF lookup involved. One shared helper
+> (`kz_model_dir()` in `transcriber.py`) keeps the download script and
+> `app.py` pointing at the same location.
+
+- [ ] **Step 0: Add the `kz_model_dir()` helper to `transcriber.py`**
+
+In `src/soyle/core/transcriber.py`, after the `WHISPER_MODELS` tuple definition, add:
+
+```python
+def kz_model_dir() -> Path:
+    """Local directory holding the CT2-converted KZ fine-tuned model.
+
+    Written by `scripts/download_model.py --model kz`; read by app.py's
+    KZ factory. Lives in Söyle's app-data dir (same root as config.toml)
+    rather than the HF hub cache: faster-whisper resolves slash-containing
+    model names as HF repo IDs, so a locally-converted model must be
+    addressed by absolute path, not a fake repo name.
+    """
+    from platformdirs import user_config_path
+
+    from soyle.core.config import APP_SLUG
+
+    return user_config_path(APP_SLUG, appauthor=False, roaming=True) / "models" / "whisper-base-kk-ct2"
+```
+
+(Late imports keep module-level imports of `transcriber.py` unchanged — `config` imports `transcriber`-adjacent modules and we don't want an import cycle at module load. If mypy/ruff are unhappy with the late import style here, move the function to `config.py` instead — it already imports `user_config_path` at module level. Either location is acceptable; the requirement is ONE shared definition.)
+
+- [ ] **Step 1: Replace the entire `scripts/download_model.py`**
 
 ```python
 """Download (and convert) Whisper models ahead of first run.
@@ -1074,85 +1124,76 @@ download into ~/.cache/huggingface/hub/.
 
 For --model kz, it does an extra step:
   1. Download akuzdeuov/whisper-base.kk (HuggingFace Transformers format)
-  2. Convert HF → CTranslate2 int8 via ct2-transformers-converter
-  3. Save into the HF cache layout so WhisperModel(...) finds it locally
+  2. Convert HF → CTranslate2 int8 via ctranslate2's programmatic
+     TransformersConverter (requires `uv sync --extra setup` for the
+     transformers+torch stack; ctranslate2 itself ships with faster-whisper)
+  3. Save into %APPDATA%/Soyle/models/whisper-base-kk-ct2/ — Söyle's own
+     app-data dir. NOT the HF hub cache: faster-whisper resolves
+     slash-containing names as HF repo IDs, so a locally-converted model
+     must be loaded by absolute path (see kz_model_dir() in
+     soyle.core.transcriber).
 
-The KZ model is only ~290 MB on HF; the CT2 int8 conversion produces
-~75 MB on disk. Both fit comfortably alongside large-v3.
+The KZ model is ~290 MB on HF; the CT2 int8 conversion produces ~75 MB
+on disk. Both fit comfortably alongside large-v3.
 """
 from __future__ import annotations
 
 import argparse
 import shutil
-import subprocess
 import sys
-from pathlib import Path
 
-from huggingface_hub import snapshot_download
+from soyle.core.transcriber import kz_model_dir
 
 KZ_HF_REPO = "akuzdeuov/whisper-base.kk"
-KZ_LOCAL_REPO_NAME = "soyle--whisper-base-kk-ct2"
 
 
-def _hf_cache_root() -> Path:
-    """Resolve the HuggingFace hub cache root, matching faster-whisper's lookup."""
-    from huggingface_hub.constants import HF_HUB_CACHE
-
-    return Path(HF_HUB_CACHE)
-
-
-def _download_and_convert_kz() -> Path:
+def _download_and_convert_kz() -> bool:
     """Download akuzdeuov/whisper-base.kk and convert to CT2 int8.
 
-    Returns the local path where WhisperModel("soyle/whisper-base-kk-ct2")
-    will find the converted artifacts.
+    Returns True on success. The converted model lands in kz_model_dir().
     """
-    from faster_whisper import WhisperModel  # late import — only need it on this path
-
-    cache_root = _hf_cache_root()
-    hf_src_dir = Path(
-        snapshot_download(
-            repo_id=KZ_HF_REPO,
-            cache_dir=str(cache_root),
-        )
-    )
-    print(f"Downloaded HF source to: {hf_src_dir}")
-
-    # Convert to CT2 int8 — `ct2-transformers-converter` is a CLI tool from
-    # the ctranslate2 package. We invoke it as a subprocess because programmatic
-    # use requires importing transformers, which is heavy and not in our deps.
-    ct2_target = cache_root / f"models--{KZ_LOCAL_REPO_NAME}" / "snapshots" / "main"
-    ct2_target.mkdir(parents=True, exist_ok=True)
-
-    print(f"Converting HF → CT2 int8 into: {ct2_target}")
-    result = subprocess.run(
-        [
-            "ct2-transformers-converter",
-            "--model",
-            str(hf_src_dir),
-            "--output_dir",
-            str(ct2_target),
-            "--quantization",
-            "int8",
-            "--force",
-        ],
-        check=False,
-    )
-    if result.returncode != 0:
+    try:
+        from ctranslate2.converters import TransformersConverter
+    except ImportError:
         print(
-            "ERROR: ct2-transformers-converter failed. Install it via "
-            "`uv sync --extra setup` and retry.",
+            "ERROR: ctranslate2 converter unavailable. This should ship with "
+            "faster-whisper — check your environment.",
             file=sys.stderr,
         )
-        # Clean partial output so a retry starts fresh.
-        shutil.rmtree(ct2_target, ignore_errors=True)
-        return Path()
+        return False
 
-    # Quick smoke test — make sure WhisperModel can load the converted artifact.
+    # TransformersConverter imports transformers (and torch) internally.
+    # Those are NOT runtime deps of Söyle — install via `uv sync --extra setup`.
+    try:
+        import transformers  # noqa: F401
+    except ImportError:
+        print(
+            "ERROR: transformers/torch not installed. Run `uv sync --extra setup` "
+            "and retry.",
+            file=sys.stderr,
+        )
+        return False
+
+    from faster_whisper import WhisperModel  # late import — only on this path
+
+    target = kz_model_dir()
+    target.parent.mkdir(parents=True, exist_ok=True)
+
+    print(f"Downloading {KZ_HF_REPO} and converting HF → CT2 int8 into: {target}")
+    try:
+        converter = TransformersConverter(KZ_HF_REPO)
+        converter.convert(str(target), quantization="int8", force=True)
+    except Exception as exc:  # noqa: BLE001 — single retry-friendly error surface
+        print(f"ERROR: conversion failed: {exc}", file=sys.stderr)
+        # Clean partial output so a retry starts fresh.
+        shutil.rmtree(target, ignore_errors=True)
+        return False
+
+    # Smoke test — load the converted artifact exactly the way app.py will.
     print("Verifying converted model loads...")
-    _ = WhisperModel(str(ct2_target), device="cpu", compute_type="int8")
-    print(f"Done. KZ model available at: {ct2_target}")
-    return ct2_target
+    _ = WhisperModel(str(target), device="cpu", compute_type="int8")
+    print(f"Done. KZ model available at: {target}")
+    return True
 
 
 def main() -> int:
@@ -1168,8 +1209,7 @@ def main() -> int:
     args = parser.parse_args()
 
     if args.model == "kz":
-        result = _download_and_convert_kz()
-        return 0 if result.name else 1
+        return 0 if _download_and_convert_kz() else 1
 
     from faster_whisper import WhisperModel
 
@@ -1182,6 +1222,8 @@ def main() -> int:
 if __name__ == "__main__":
     sys.exit(main())
 ```
+
+Note: `TransformersConverter(KZ_HF_REPO)` downloads the HF checkpoint itself (via transformers' own cache) — no separate `snapshot_download` call needed. The smoke test loads `str(target)`, which is **exactly** the same value `app.py`'s factory passes to `Transcriber(model=...)`, so "smoke test passes but app can't find the model" is structurally impossible.
 
 - [ ] **Step 2: Verify the file parses + types**
 
@@ -1219,10 +1261,10 @@ Edit `src/soyle/app.py:31` to add the second import:
 
 ```python
 from soyle.core.kz_aware_transcriber import KzAwareTranscriber
-from soyle.core.transcriber import Transcriber
+from soyle.core.transcriber import Transcriber, kz_model_dir
 ```
 
-(Order alphabetically — `kz_aware_transcriber` before `transcriber`.)
+(Order alphabetically — `kz_aware_transcriber` before `transcriber`. `kz_model_dir` is the shared path helper added in Task C1 Step 0.)
 
 - [ ] **Step 3: Read current construction block at `app.py:138-144`**
 
@@ -1251,9 +1293,12 @@ It currently has:
 
         def _kz_factory() -> Transcriber:
             # Lazy KZ-only fine-tuned model. Created on first KZ-route.
+            # Loaded by ABSOLUTE PATH from Söyle's app-data dir — NOT an
+            # HF repo id (slash-containing names trigger HF hub lookup;
+            # codex P1 on PR #42). Written by download_model.py --model kz.
             # See docs/superpowers/specs/2026-05-24-kz-dual-model-design.md
             return Transcriber(
-                model="soyle/whisper-base-kk-ct2",  # local CT2 path
+                model=str(kz_model_dir()),
                 device=self._cfg.whisper.device,
                 compute_type="int8",
                 language="kk",
@@ -1361,7 +1406,7 @@ Find the existing "A. Pure KZ recognition (Whisper layer)" subsection. Immediate
 
 - [ ] First KZ-detection in a fresh Söyle session: `%APPDATA%\Soyle\logs\soyle.log` shows `kz_model_loaded` event exactly once.
 - [ ] Second KZ-detection in the same session: no new `kz_model_loaded` event (cached).
-- [ ] Simulate load failure: temporarily rename the directory `~/.cache/huggingface/hub/models--soyle--whisper-base-kk-ct2/`, restart Söyle, dictate Kazakh. Tray toast appears once: "KZ recognition недоступен...". Second KZ-attempt produces no second toast (suppressed). Restore the directory afterward.
+- [ ] Simulate load failure: temporarily rename the directory `%APPDATA%\Soyle\models\whisper-base-kk-ct2\`, restart Söyle, dictate Kazakh. Tray toast appears once: "KZ recognition недоступен...". Second KZ-attempt produces no second toast (suppressed). Restore the directory afterward.
 ```
 
 - [ ] **Step 5: Verify the file still renders cleanly**
@@ -1377,30 +1422,41 @@ Expected: `checklist OK`.
 - [ ] **Step 1: Stage and commit**
 
 ```bash
-git add src/soyle/app.py scripts/download_model.py docs/MANUAL_TESTS.md
+git add src/soyle/core/transcriber.py src/soyle/app.py scripts/download_model.py docs/MANUAL_TESTS.md
 git commit -m "$(cat <<'EOF'
 feat(transcriber): wire KzAwareTranscriber into app.py + extend download_model.py
 
 PR C of 3 in the KZ dual-model stack — activation PR.
 (See docs/superpowers/plans/2026-05-24-kz-dual-model-implementation.md.)
 
-Three coordinated changes:
+Four coordinated changes:
 
-1. scripts/download_model.py — new --model kz flag that downloads
-   akuzdeuov/whisper-base.kk from HF, converts HF Transformers → CT2
-   int8 via ct2-transformers-converter (installed via --extra setup
-   in PR B), and saves into the HF cache layout so WhisperModel can
-   load locally without network on subsequent runs.
+1. src/soyle/core/transcriber.py — new kz_model_dir() helper: single
+   source of truth for where the converted KZ model lives
+   (%APPDATA%/Soyle/models/whisper-base-kk-ct2). Shared by the
+   download script (writer) and app.py (reader) so they can't drift.
 
-2. src/soyle/app.py — wraps the existing Transcriber in a
+2. scripts/download_model.py — new --model kz flag that downloads
+   akuzdeuov/whisper-base.kk and converts HF Transformers → CT2 int8
+   via ctranslate2's programmatic TransformersConverter (transformers+
+   torch installed via --extra setup from PR B; ctranslate2 itself
+   ships with faster-whisper). Output goes to kz_model_dir() — NOT the
+   HF hub cache: faster-whisper resolves slash-containing model names
+   as HF repo IDs (codex P1 on PR #42), so a locally-converted model
+   must be addressed by absolute path. The post-conversion smoke test
+   loads str(kz_model_dir()) — the exact value app.py passes — so
+   "smoke test passes but app can't find the model" is structurally
+   impossible.
+
+3. src/soyle/app.py — wraps the existing Transcriber in a
    KzAwareTranscriber. Primary continues to be self._cfg.whisper.model
    (default large-v3-turbo). KZ secondary is a lazy factory that
-   constructs Transcriber("soyle/whisper-base-kk-ct2", language="kk",
+   constructs Transcriber(model=str(kz_model_dir()), language="kk",
    compute_type="int8") only on first KZ-detection. Tray's
    show_action_failed is registered as the one-time failure toast
    callback.
 
-3. docs/MANUAL_TESTS.md — replaces the PR #40 honest-failure disclaimer
+4. docs/MANUAL_TESTS.md — replaces the PR #40 honest-failure disclaimer
    with post-fix expectations. Adds a Prerequisites entry for the KZ
    pre-download step. Adds a new "A0. Dual-model load + cache"
    sub-section verifying kz_model_loaded fires once per session,
@@ -1443,8 +1499,8 @@ Wires the dormant \`KzAwareTranscriber\` (landed in PR B) into the real pipeline
 
 | Step | What user does | Outcome |
 |---|---|---|
-| 1 | \`uv sync --extra setup\` | Installs \`ct2-transformers-converter\` (one-time) |
-| 2 | \`uv run python scripts/download_model.py --model kz\` | Downloads HF source (~290 MB) → converts to CT2 int8 (~75 MB on disk) |
+| 1 | \`uv sync --extra setup\` | Installs the transformers+torch conversion stack (one-time; the converter itself ships with ctranslate2 via faster-whisper) |
+| 2 | \`uv run python scripts/download_model.py --model kz\` | Downloads HF source (~290 MB) → converts to CT2 int8 (~75 MB) into \`%APPDATA%\\Soyle\\models\\whisper-base-kk-ct2\\\` |
 | 3 | Dictate Kazakh as normal (auto-detect language) | First KZ phrase: ~+3-5 sec latency (one-time KZ model load). Subsequent: ~+1-3 sec latency (re-transcribe via KZ model). Output: actual Kazakh, not arabic / azerbaijani / russian. |
 
 ## Failure modes (recap from spec Section 8)
