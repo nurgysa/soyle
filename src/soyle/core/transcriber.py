@@ -256,8 +256,13 @@ class Transcriber:
         duration_ms = int(info.duration * 1000) if info.duration else 0
         language = info.language or ""
         language_probability = float(info.language_probability or 0.0)
+        # Element-wise coercion (not a bare list() copy): info is Any under
+        # the faster-whisper mypy override, so this makes the declared
+        # list[tuple[str, float]] element type true by construction.
         all_language_probs = (
-            list(info.all_language_probs) if info.all_language_probs else None
+            [(str(lang), float(p)) for lang, p in info.all_language_probs]
+            if info.all_language_probs
+            else None
         )
 
         return TranscriptResult(
