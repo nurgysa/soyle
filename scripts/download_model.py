@@ -69,15 +69,28 @@ def _download_and_convert_kz() -> bool:
 
     print(f"Downloading {KZ_HF_REPO} and converting HF → CT2 int8 into: {target}")
     try:
-        # copy_files makes the converted model SELF-CONTAINED: without it,
-        # faster-whisper re-downloads the tokenizer from HF at load time,
-        # so deleting the HF cache (which we advise below) or going
-        # offline would break KZ loading (codex P2 on PR #47).
+        # The output must be SELF-CONTAINED, including the tokenizer.
+        # Without tokenizer.json next to model.bin, faster-whisper falls
+        # back to the GENERIC openai/whisper-tiny tokenizer fetched from
+        # HF (transcribe.py:705-708) — a network dependency AND a
+        # vocabulary mismatch risk: the KZ fine-tune ships added_tokens.
+        #
+        # The KZ repo has no tokenizer.json (slow-tokenizer sidecars
+        # only: vocab.json, merges.txt, ... — codex P1 on PR #48), and
+        # copy_files raises ValueError on absent entries. So: copy the
+        # file that exists, and GENERATE tokenizer.json from the slow
+        # files via transformers (slow→fast conversion preserves the
+        # fine-tune's full vocabulary, added tokens included).
         converter = TransformersConverter(
             KZ_HF_REPO,
-            copy_files=["tokenizer.json", "preprocessor_config.json"],
+            copy_files=["preprocessor_config.json"],
         )
         converter.convert(str(tmp), quantization="int8", force=True)
+
+        from transformers import WhisperTokenizerFast
+
+        tokenizer = WhisperTokenizerFast.from_pretrained(KZ_HF_REPO)
+        tokenizer.backend_tokenizer.save(str(tmp / "tokenizer.json"))
     except Exception as exc:
         print(f"ERROR: conversion failed: {exc}", file=sys.stderr)
         # Clean the partial TEMP output so a retry starts fresh; the
