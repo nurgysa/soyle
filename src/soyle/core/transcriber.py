@@ -135,6 +135,22 @@ WHISPER_MODELS: tuple[WhisperModelPreset, ...] = (
 )
 
 
+def kz_model_dir() -> Path:
+    """Local directory holding the CT2-converted KZ fine-tuned model.
+
+    Written by `scripts/download_model.py --model kz`; read by app.py's
+    KZ factory. Lives in Söyle's app-data dir (same root as config.toml)
+    rather than the HF hub cache: faster-whisper resolves slash-containing
+    model names as HF repo IDs, so a locally-converted model must be
+    addressed by absolute path, not a fake repo name.
+    """
+    from platformdirs import user_config_path
+
+    from soyle.core.config import APP_SLUG
+
+    return user_config_path(APP_SLUG, appauthor=False, roaming=True) / "models" / "whisper-base-kk-ct2"
+
+
 @dataclass
 class TranscriptResult:
     raw_text: str

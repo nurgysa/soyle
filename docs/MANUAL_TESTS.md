@@ -7,6 +7,7 @@ Run this checklist before each release. Do NOT release if anything fails.
 - [ ] Fresh Windows 10/11 x64 VM or test machine
 - [ ] Valid OpenRouter API key installed (`ConfigStore().set_api_key(...)`)
 - [ ] Working microphone (RMS > 0.03 when speaking — check with `scripts/diag_e2e.py`)
+- [ ] KZ model downloaded: `uv sync --extra setup` + `uv run python scripts/download_model.py --model kz` (one-time setup, ~290 MB download → ~75 MB on disk after CT2 conversion)
 
 ## Install & launch
 
@@ -52,23 +53,33 @@ Run this checklist before each release. Do NOT release if anything fails.
 
 ## Code-switching и казахский
 
-> ⚠ **Текущее состояние (с 2026-05-23):** Whisper KZ recognition на
-> vanilla large-v3 ненадёжен — >55% WER даже с принудительным
-> `language='kk'`, hardware-quirk на GTX 16xx блокирует force-language
-> через CT2 hang. Поэтому секции A/B/C/E будут **проваливаться** на
-> большинстве hardware пока не выйдет dual-model fix (Variant D из
-> [docs/research/2026-05-23-kz-detection-root-cause.md](research/2026-05-23-kz-detection-root-cause.md)).
-> Секция D (LLM polish modes) проходит — она зависит только от LLM,
-> не от Whisper. Секция F (pure-EN regression) тоже проходит.
+> ✅ **После shipping PR C (2026-05-24):** KZ recognition использует
+> dual-model architecture — vanilla large-v3 для RU/EN, fine-tuned
+> akuzdeuov/whisper-base.kk (CT2 int8) для KZ. Router автоматически
+> переключается на основе detection signals (lang==kk OR turkic-family
+> low-conf OR kk-in-top-5 ≥0.10).
 >
-> Эти сценарии остаются в чек-листе чтобы (1) фиксировать baseline до
-> fix-а, (2) служить regression check после fix-а.
+> **Prereq:** запустите `uv sync --extra setup` затем
+> `uv run python scripts/download_model.py --model kz` ОДИН раз перед
+> первой KZ-диктовкой. См. секцию Prerequisites.
+>
+> **Ожидаемое поведение:** фразы с диакритиками (Қ Ң Ө Ү Ұ Һ І) дают
+> чистый KZ output. Фразы БЕЗ диакритик (фонетически близкие к RU)
+> могут проваливаться — это accepted limitation heuristic routing
+> (см. docs/research/2026-05-23-kz-detection-root-cause.md Section 5,
+> Option B trade-off).
 
 Сценарии проверяют, что KZ-распознавание и KZ-сохранение работают
 во всём пайплайне Whisper → LLM. Используйте реальный микрофон —
 audio-первый pipeline единственный способ протестировать Whisper-слой.
 Без аудио можно тестировать только LLM-слой (например, через REPL:
 `asyncio.run(PostProcess(...).polish(text=..., language='kk'))`).
+
+### A0. Dual-model load + cache
+
+- [ ] First KZ-detection in a fresh Söyle session: `%APPDATA%\Soyle\logs\soyle.log` shows `kz_model_loaded` event exactly once.
+- [ ] Second KZ-detection in the same session: no new `kz_model_loaded` event (cached).
+- [ ] Simulate load failure: temporarily rename the directory `%APPDATA%\Soyle\models\whisper-base-kk-ct2\`, restart Söyle, dictate Kazakh. Tray toast appears once: "KZ recognition недоступен...". Second KZ-attempt produces no second toast (suppressed). Restore the directory afterward.
 
 ### A. Pure KZ recognition (Whisper layer)
 
