@@ -6,7 +6,7 @@ Routing decisions are tested as pure functions of detection info.
 """
 from __future__ import annotations
 
-from typing import Any
+from collections.abc import Callable
 
 import numpy as np
 import pytest
@@ -33,10 +33,14 @@ def _make_result(
     )
 
 
+def _raise_runtime_error() -> None:
+    raise RuntimeError("warm_up failed: model dir missing")
+
+
 class FakeTranscriber:
     """Drop-in fake satisfying the Transcriber duck-type used by KzAware."""
 
-    def __init__(self, result_factory: Any) -> None:
+    def __init__(self, result_factory: Callable[[], TranscriptResult]) -> None:
         self.result_factory = result_factory
         self.transcribe_calls: list[tuple[tuple[int, ...], int]] = []
         self.warm_up_calls: int = 0
@@ -45,11 +49,7 @@ class FakeTranscriber:
 
     def transcribe(self, audio: np.ndarray, sample_rate: int) -> TranscriptResult:
         self.transcribe_calls.append((audio.shape, sample_rate))
-        result = self.result_factory()
-        # Tests can pass either a TranscriptResult or a callable returning one.
-        if callable(result):
-            return result()  # type: ignore[no-any-return]
-        return result  # type: ignore[no-any-return]
+        return self.result_factory()
 
     def warm_up(self) -> None:
         self.warm_up_calls += 1
@@ -169,6 +169,39 @@ def test_no_route_when_kk_top5_prob_too_low(audio: np.ndarray) -> None:
     assert factory_calls[0] == 0
 
 
+def test_no_route_at_exact_turkic_threshold(audio: np.ndarray) -> None:
+    """prob exactly 0.6 does NOT route — the comparison is strict `<`."""
+    primary = FakeTranscriber(lambda: _make_result(language="az", language_probability=0.6))
+    factory_calls = [0]
+
+    def factory() -> FakeTranscriber:
+        factory_calls[0] += 1
+        return FakeTranscriber(lambda: _make_result())
+
+    wrapper = KzAwareTranscriber(primary=primary, kz_factory=factory)
+    result = wrapper.transcribe(audio, 16000)
+
+    assert result.language == "az"
+    assert factory_calls[0] == 0
+
+
+def test_route_at_exact_top5_threshold(audio: np.ndarray) -> None:
+    """kk in top-5 with prob exactly 0.10 DOES route — the comparison is `>=`."""
+    primary = FakeTranscriber(
+        lambda: _make_result(
+            language="ar",
+            language_probability=0.7,
+            all_language_probs=[("ar", 0.7), ("kk", 0.10)],
+        )
+    )
+    kz = FakeTranscriber(lambda: _make_result(text="kz output"))
+
+    wrapper = KzAwareTranscriber(primary=primary, kz_factory=lambda: kz)
+    result = wrapper.transcribe(audio, 16000)
+
+    assert result.raw_text == "kz output"
+
+
 # ---- Lazy load + failure handling ----
 
 
@@ -191,10 +224,12 @@ def test_lazy_load_only_first_time(audio: np.ndarray) -> None:
 
 
 def test_load_failure_invokes_toast_once(audio: np.ndarray) -> None:
-    """Factory raises every time → toast fires once, log fires every attempt."""
+    """Factory raises on first attempt → toast fires once; attempt 2 short-circuits on the failed-once flag (factory not called again)."""
     primary = FakeTranscriber(lambda: _make_result(language="kk"))
+    factory_calls = [0]
 
     def failing_factory() -> FakeTranscriber:
+        factory_calls[0] += 1
         raise RuntimeError("model not found")
 
     toasts: list[str] = []
@@ -206,6 +241,7 @@ def test_load_failure_invokes_toast_once(audio: np.ndarray) -> None:
 
     assert len(toasts) == 1
     assert "KZ recognition недоступен" in toasts[0]
+    assert factory_calls[0] == 1
 
 
 def test_load_failure_returns_primary_fallback(audio: np.ndarray) -> None:
@@ -233,6 +269,37 @@ def test_failure_without_toast_callback_does_not_crash(audio: np.ndarray) -> Non
     result = wrapper.transcribe(audio, 16000)
 
     assert result.language == "kk"  # primary's result returned
+
+
+def test_warm_up_failure_falls_back_permanently(audio: np.ndarray) -> None:
+    """Factory succeeds but warm_up() raises → BOTH calls fall back to primary.
+
+    This is the real production failure path: Transcriber.__init__ only
+    stores config; the model actually loads inside warm_up(). A partially
+    constructed (never-warmed) KZ model must not be cached and returned
+    on the second call.
+    """
+    primary = FakeTranscriber(lambda: _make_result(text="primary fallback", language="kk"))
+    kz = FakeTranscriber(lambda: _make_result(text="kz"))
+    kz.warm_up = _raise_runtime_error  # type: ignore[method-assign]
+    factory_calls = [0]
+
+    def factory() -> FakeTranscriber:
+        factory_calls[0] += 1
+        return kz
+
+    toasts: list[str] = []
+    wrapper = KzAwareTranscriber(primary=primary, kz_factory=factory)
+    wrapper.set_failure_toast_callback(lambda msg: toasts.append(msg))
+
+    r1 = wrapper.transcribe(audio, 16000)
+    r2 = wrapper.transcribe(audio, 16000)
+
+    assert r1.raw_text == "primary fallback"
+    assert r2.raw_text == "primary fallback"  # NOT the never-warmed kz model
+    assert kz.transcribe_calls == []  # kz never used for transcription
+    assert factory_calls[0] == 1  # failed-once flag short-circuits attempt 2
+    assert len(toasts) == 1
 
 
 # ---- API forwarding ----

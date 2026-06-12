@@ -19,6 +19,8 @@ _log = structlog.get_logger(__name__)
 # Routing thresholds — hard-coded defaults. Promoted to config.toml only
 # if real-world use shows per-user tuning is needed. See spec Section 10
 # (Open questions) for the deferral reasoning.
+# Includes non-Turkic ar/fa: Whisper empirically misdetects Kazakh as
+# them (see docs/research/2026-05-23-kz-detection-root-cause.md).
 _TURKIC_FAMILY_LANGUAGES: frozenset[str] = frozenset({"az", "tr", "uz", "ky", "ar", "fa"})
 _TURKIC_LOW_CONF_THRESHOLD: float = 0.6
 _KZ_TOP5_MIN_PROB: float = 0.10
@@ -50,8 +52,13 @@ class KzAwareTranscriber:
 
     def transcribe(self, audio: np.ndarray, sample_rate: int) -> TranscriptResult:
         primary_result = self._primary.transcribe(audio, sample_rate)
-        if not self._should_route_to_kz(primary_result):
-            _log.info("route_to_primary", lang=primary_result.language)
+        reason = self._route_reason(primary_result)
+        if reason is None:
+            _log.info(
+                "route_to_primary",
+                lang=primary_result.language,
+                prob=primary_result.language_probability,
+            )
             return primary_result
         kz = self._ensure_kz_loaded()
         if kz is None:
@@ -66,6 +73,7 @@ class KzAwareTranscriber:
             primary_detected=primary_result.language,
             primary_prob=primary_result.language_probability,
             kz_chars=len(kz_result.raw_text),
+            reason=reason,
         )
         return kz_result
 
@@ -104,26 +112,40 @@ class KzAwareTranscriber:
             self._kz.warm_up()
             _log.info("kz_model_loaded")
             return self._kz
+        # Broad catch is intentional: load failure is a routine setup
+        # problem (model not downloaded, disk full, corrupt file) handled
+        # by fallback + one-time toast. Runtime transcribe() failures are
+        # NOT caught here — they re-raise (spec Section 8 #1 vs #2).
         except Exception as exc:
+            # factory may have assigned before warm_up raised — reset so
+            # the next call does not short-circuit via `if self._kz is not None`.
+            self._kz = None
             self._kz_load_failed_once = True
             _log.error("kz_model_load_failed", error=str(exc), exc_info=True)
             if self._failure_toast_callback is not None:
                 self._failure_toast_callback(
                     "KZ recognition недоступен (модель не загрузилась). "
-                    "Откат на large-v3 — KZ распознавание ненадёжно."
+                    "Откат на основную модель — KZ распознавание ненадёжно. "
+                    "Запустите: scripts/download_model.py --model kz"
                 )
             return None
 
-    def _should_route_to_kz(self, result: TranscriptResult) -> bool:
+    def _route_reason(self, result: TranscriptResult) -> str | None:
+        """Return which signal fired, or None if KZ routing is not needed.
+
+        Return values: "kk" | "turkic_low_conf" | "kk_in_top5" | None.
+        The literal is logged as ``reason`` on the route_to_kz event —
+        groundwork for threshold-tuning decisions deferred in spec Section 10.
+        """
         if result.language == "kk":
-            return True
+            return "kk"
         if (
             result.language in _TURKIC_FAMILY_LANGUAGES
             and result.language_probability < _TURKIC_LOW_CONF_THRESHOLD
         ):
-            return True
+            return "turkic_low_conf"
         if result.all_language_probs is not None:
             for cand_lang, cand_prob in result.all_language_probs:
                 if cand_lang == "kk" and cand_prob >= _KZ_TOP5_MIN_PROB:
-                    return True
-        return False
+                    return "kk_in_top5"
+        return None
