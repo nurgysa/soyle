@@ -46,7 +46,7 @@ class Tokens:
 LIGHT = Tokens(
     bg_base="#fafafa",
     bg_surface="#ffffff",
-    bg_elevated="#ffffff",
+    bg_elevated="#ffffff",  # same as bg_surface; light theme stays flat for now
     text_primary="#1a1a1a",
     text_secondary="#555555",
     text_tertiary="#8a8a8a",
