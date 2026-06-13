@@ -19,12 +19,13 @@ from PySide6.QtGui import QColor, QGuiApplication, QMouseEvent, QPainter, QPaint
 from PySide6.QtWidgets import QWidget
 
 from soyle.core.bus import Event, EventBus
+from soyle.ui.theme.tokens import STATE_POLISHING, STATE_RECORDING
 
 _RING_COLOR_IDLE = QColor("#7f8c8d")          # gray
-_RING_COLOR_RECORDING = QColor("#e74c3c")     # red
-_RING_COLOR_PROCESSING = QColor("#3498db")    # blue
+_RING_COLOR_RECORDING = QColor(STATE_RECORDING)
+_RING_COLOR_PROCESSING = QColor(STATE_POLISHING)
 _FILL_BG = QColor(44, 62, 80, 220)            # dark navy, slightly translucent
-_DOT_COLOR_RECORDING = QColor("#e74c3c")
+_DOT_COLOR_RECORDING = QColor(STATE_RECORDING)
 _MIC_COLOR_IDLE = QColor("#ecf0f1")           # light gray-white
 
 
