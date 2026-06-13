@@ -81,24 +81,24 @@ class SettingsWindow(QMainWindow):
         self._on_dictionary_changed = on_dictionary_changed
         self._cfg: Config = store.load()
 
-        self.setWindowTitle("Söyle — настройки")
+        self.setWindowTitle(self.tr("Söyle — настройки"))
         self.resize(560, 440)
 
         central = QWidget()
         root = QVBoxLayout(central)
 
         self._tabs = QTabWidget()
-        self._tabs.addTab(self._build_hotkey_tab(), "Хоткей")
-        self._tabs.addTab(self._build_audio_tab(), "Аудио")
+        self._tabs.addTab(self._build_hotkey_tab(), self.tr("Хоткей"))
+        self._tabs.addTab(self._build_audio_tab(), self.tr("Аудио"))
         self._tabs.addTab(self._build_whisper_tab(), "Whisper")
         self._tabs.addTab(self._build_postprocess_tab(), "LLM")
-        self._tabs.addTab(self._build_dictionary_tab(), "Словарь")
+        self._tabs.addTab(self._build_dictionary_tab(), self.tr("Словарь"))
         # Cloud Sync sits right after Словарь — it backs up dictionary.toml,
         # so users browsing dictionary settings stay in context.
         if self._cloud_sync is not None:
             self._tabs.addTab(self._build_cloud_sync_tab(), "Cloud Sync")
-        self._tabs.addTab(self._build_ui_tab(), "Внешний вид")
-        self._tabs.addTab(self._build_about_tab(), "О программе")
+        self._tabs.addTab(self._build_ui_tab(), self.tr("Внешний вид"))
+        self._tabs.addTab(self._build_about_tab(), self.tr("О программе"))
         root.addWidget(self._tabs)
 
         # Wire the worker-thread signals to main-thread slots.
@@ -109,10 +109,10 @@ class SettingsWindow(QMainWindow):
 
         btn_row = QHBoxLayout()
         btn_row.addStretch()
-        btn_save = QPushButton("Сохранить")
+        btn_save = QPushButton(self.tr("Сохранить"))
         btn_save.clicked.connect(self._save)
         btn_row.addWidget(btn_save)
-        btn_close = QPushButton("Закрыть")
+        btn_close = QPushButton(self.tr("Закрыть"))
         btn_close.clicked.connect(self.close)
         btn_row.addWidget(btn_close)
         root.addLayout(btn_row)
@@ -141,24 +141,26 @@ class SettingsWindow(QMainWindow):
 
         # "Записать…" opens a capture dialog that detects the pressed
         # key — saves the user from guessing the exact string format.
-        self._hk_capture_btn = QPushButton("Записать…")
+        self._hk_capture_btn = QPushButton(self.tr("Записать…"))
         self._hk_capture_btn.setFixedWidth(100)
-        self._hk_capture_btn.setToolTip("Нажать клавишу и распознать её автоматически")
+        self._hk_capture_btn.setToolTip(
+            self.tr("Нажать клавишу и распознать её автоматически")
+        )
         self._hk_capture_btn.clicked.connect(self._capture_hotkey_clicked)
 
         hotkey_row = QHBoxLayout()
         hotkey_row.addWidget(self._hk_combination, 1)
         hotkey_row.addWidget(self._hk_capture_btn)
-        layout.addRow("Клавиша:", hotkey_row)
+        layout.addRow(self.tr("Клавиша:"), hotkey_row)
 
         self._hk_mode = QComboBox()
         self._hk_mode.addItems(["push_to_talk", "toggle"])
         self._hk_mode.setCurrentText(self._cfg.hotkey.mode)
-        layout.addRow("Режим:", self._hk_mode)
+        layout.addRow(self.tr("Режим:"), self._hk_mode)
         self._hk_debounce = QSpinBox()
         self._hk_debounce.setRange(0, 1000)
         self._hk_debounce.setValue(self._cfg.hotkey.debounce_ms)
-        layout.addRow("Debounce (мс):", self._hk_debounce)
+        layout.addRow(self.tr("Debounce (мс):"), self._hk_debounce)
         return w
 
     def _capture_hotkey_clicked(self) -> None:
@@ -177,17 +179,21 @@ class SettingsWindow(QMainWindow):
         w = QWidget()
         layout = QFormLayout(w)
         self._audio_device = QLineEdit(self._cfg.audio.device)
-        layout.addRow("Устройство:", self._audio_device)
+        layout.addRow(self.tr("Устройство:"), self._audio_device)
         self._audio_max = QSpinBox()
         self._audio_max.setRange(1, 600)
         self._audio_max.setValue(self._cfg.audio.max_recording_seconds)
-        layout.addRow("Макс. запись (сек):", self._audio_max)
+        layout.addRow(self.tr("Макс. запись (сек):"), self._audio_max)
 
-        self._audio_vad = QCheckBox("Обрезать тишину в начале и конце записи")
+        self._audio_vad = QCheckBox(
+            self.tr("Обрезать тишину в начале и конце записи")
+        )
         self._audio_vad.setChecked(self._cfg.audio.vad_enabled)
         self._audio_vad.setToolTip(
-            "Удаляет тихие фреймы по краям записи. Помогает когда коллеги "
-            "говорят рядом — их голос будет ниже порога и обрежется."
+            self.tr(
+                "Удаляет тихие фреймы по краям записи. Помогает когда коллеги "
+                "говорят рядом — их голос будет ниже порога и обрежется."
+            )
         )
         layout.addRow(self._audio_vad)
 
@@ -202,11 +208,13 @@ class SettingsWindow(QMainWindow):
         self._audio_threshold.setSingleStep(0.005)
         self._audio_threshold.setValue(self._cfg.audio.silence_threshold_rms)
         self._audio_threshold.setToolTip(
-            "Порог RMS-энергии для определения тишины. "
-            "Ниже = пропускает тихую/удалённую речь. "
-            "Выше = только громкая близкая речь."
+            self.tr(
+                "Порог RMS-энергии для определения тишины. "
+                "Ниже = пропускает тихую/удалённую речь. "
+                "Выше = только громкая близкая речь."
+            )
         )
-        layout.addRow("Порог тишины (RMS):", self._audio_threshold)
+        layout.addRow(self.tr("Порог тишины (RMS):"), self._audio_threshold)
         return w
 
     def _build_whisper_tab(self) -> QWidget:
@@ -227,15 +235,15 @@ class SettingsWindow(QMainWindow):
             self._w_model.setCurrentIndex(preset_idx)
         else:
             self._w_model.setEditText(current)
-        layout.addRow("Модель:", self._w_model)
+        layout.addRow(self.tr("Модель:"), self._w_model)
         self._w_device = QComboBox()
         self._w_device.addItems(["auto", "cuda", "cpu"])
         self._w_device.setCurrentText(self._cfg.whisper.device)
-        layout.addRow("Device:", self._w_device)
+        layout.addRow(self.tr("Device:"), self._w_device)
         self._w_compute = QComboBox()
         self._w_compute.addItems(["int8", "float16", "float32"])
         self._w_compute.setCurrentText(self._cfg.whisper.compute_type)
-        layout.addRow("Compute type:", self._w_compute)
+        layout.addRow(self.tr("Compute type:"), self._w_compute)
 
         # None = auto-detect (Whisper picks per utterance). Forcing a language
         # avoids cross-language mis-detections at the cost of failing on the
@@ -245,12 +253,14 @@ class SettingsWindow(QMainWindow):
         # and CPU+small produces too many hallucinations to be useful.
         # Prompts and tests retain KZ rules so re-adding "kk" is one line.
         self._w_language = QComboBox()
-        self._w_language.addItem("Авто (определять автоматически)", None)
+        self._w_language.addItem(
+            self.tr("Авто (определять автоматически)"), None
+        )
         self._w_language.addItem("Русский", "ru")
         self._w_language.addItem("English", "en")
         idx = self._w_language.findData(self._cfg.whisper.language)
         self._w_language.setCurrentIndex(max(0, idx))
-        layout.addRow("Язык:", self._w_language)
+        layout.addRow(self.tr("Язык:"), self._w_language)
 
         # Hint label — same muted styling as the Cloud Sync last-synced
         # subtitle. Honest framing: KZ recognition is currently unreliable
@@ -259,10 +269,12 @@ class SettingsWindow(QMainWindow):
         # would deadlock CT2 on GTX 16xx. See research notes:
         # docs/research/2026-05-23-kz-detection-root-cause.md
         self._w_language_hint = QLabel(
-            "Auto-detect рекомендуется для смешанной RU+EN речи. "
-            "Принудительный выбор ru/en даёт лучше recognition "
-            "строго-моноязычной диктовки, но ломает code-switching. "
-            "Казахский пока ненадёжен — fix в работе (dual-model)."
+            self.tr(
+                "Auto-detect рекомендуется для смешанной RU+EN речи. "
+                "Принудительный выбор ru/en даёт лучше recognition "
+                "строго-моноязычной диктовки, но ломает code-switching. "
+                "Казахский пока ненадёжен — fix в работе (dual-model)."
+            )
         )
         self._w_language_hint.setStyleSheet("color: #888; font-size: 11px;")
         self._w_language_hint.setWordWrap(True)
@@ -272,19 +284,41 @@ class SettingsWindow(QMainWindow):
     def _build_postprocess_tab(self) -> QWidget:
         w = QWidget()
         layout = QFormLayout(w)
-        self._pp_enabled = QCheckBox("Включить постобработку LLM")
+        self._pp_enabled = QCheckBox(self.tr("Включить постобработку LLM"))
         self._pp_enabled.setChecked(self._cfg.postprocess.enabled)
         layout.addRow(self._pp_enabled)
 
         self._pp_mode = QComboBox()
-        self._pp_mode.addItem("Polish — чистка, пунктуация, без переформулирования", "polish")
-        self._pp_mode.addItem("Rewrite — активная переформулировка в связный текст", "rewrite")
-        self._pp_mode.addItem("AI Prompt — превратить речь в инструкцию для Claude/ChatGPT/Gemini", "ai_prompt")
-        self._pp_mode.addItem("Plain Text — текст для документа (Word, email, мессенджер)", "plain_text")
-        self._pp_mode.addItem("Task — структурированная задача (Задача / Департамент / Приоритет / Описание)", "task")
+        self._pp_mode.addItem(
+            self.tr("Polish — чистка, пунктуация, без переформулирования"),
+            "polish",
+        )
+        self._pp_mode.addItem(
+            self.tr("Rewrite — активная переформулировка в связный текст"),
+            "rewrite",
+        )
+        self._pp_mode.addItem(
+            self.tr(
+                "AI Prompt — превратить речь в инструкцию для Claude/ChatGPT/Gemini"
+            ),
+            "ai_prompt",
+        )
+        self._pp_mode.addItem(
+            self.tr(
+                "Plain Text — текст для документа (Word, email, мессенджер)"
+            ),
+            "plain_text",
+        )
+        self._pp_mode.addItem(
+            self.tr(
+                "Task — структурированная задача"
+                " (Задача / Департамент / Приоритет / Описание)"
+            ),
+            "task",
+        )
         idx = self._pp_mode.findData(self._cfg.postprocess.mode)
         self._pp_mode.setCurrentIndex(max(0, idx))
-        layout.addRow("Режим:", self._pp_mode)
+        layout.addRow(self.tr("Режим:"), self._pp_mode)
 
         self._pp_model = QComboBox()
         self._pp_model.setEditable(True)
@@ -297,11 +331,11 @@ class SettingsWindow(QMainWindow):
             self._pp_model.setCurrentIndex(preset_idx)
         else:
             self._pp_model.setEditText(current)
-        layout.addRow("Модель:", self._pp_model)
+        layout.addRow(self.tr("Модель:"), self._pp_model)
         self._pp_timeout = QDoubleSpinBox()
         self._pp_timeout.setRange(1.0, 30.0)
         self._pp_timeout.setValue(self._cfg.postprocess.timeout_seconds)
-        layout.addRow("Таймаут (сек):", self._pp_timeout)
+        layout.addRow(self.tr("Таймаут (сек):"), self._pp_timeout)
 
         # Pre-populate from keyring so "Показать" reveals the stored key.
         # The stored value is kept as `_pp_api_key_original` so we can skip
@@ -311,18 +345,20 @@ class SettingsWindow(QMainWindow):
         self._pp_api_key_original = existing_key
         self._pp_api_key = QLineEdit(existing_key)
         self._pp_api_key.setEchoMode(QLineEdit.EchoMode.Password)
-        self._pp_api_key.setPlaceholderText("sk-or-v1-…")
+        self._pp_api_key.setPlaceholderText(self.tr("sk-or-v1-…"))
 
-        self._pp_show_key_btn = QPushButton("Показать")
+        self._pp_show_key_btn = QPushButton(self.tr("Показать"))
         self._pp_show_key_btn.setCheckable(True)
         self._pp_show_key_btn.setFixedWidth(90)
-        self._pp_show_key_btn.setToolTip("Временно сделать ключ видимым")
+        self._pp_show_key_btn.setToolTip(
+            self.tr("Временно сделать ключ видимым")
+        )
         self._pp_show_key_btn.toggled.connect(self._toggle_key_visibility)
 
-        self._pp_clear_key_btn = QPushButton("Удалить")
+        self._pp_clear_key_btn = QPushButton(self.tr("Удалить"))
         self._pp_clear_key_btn.setFixedWidth(90)
         self._pp_clear_key_btn.setToolTip(
-            "Стереть сохранённый ключ из Windows Credential Manager"
+            self.tr("Стереть сохранённый ключ из Windows Credential Manager")
         )
         self._pp_clear_key_btn.clicked.connect(self._clear_api_key_clicked)
 
@@ -330,7 +366,7 @@ class SettingsWindow(QMainWindow):
         key_row.addWidget(self._pp_api_key, 1)
         key_row.addWidget(self._pp_show_key_btn)
         key_row.addWidget(self._pp_clear_key_btn)
-        layout.addRow("OpenRouter API key:", key_row)
+        layout.addRow(self.tr("OpenRouter API key:"), key_row)
 
         # Status line — shows whether a key is currently stored and a
         # masked preview so the user can tell "which" key is active.
@@ -352,10 +388,12 @@ class SettingsWindow(QMainWindow):
         layout = QVBoxLayout(w)
 
         _cs_desc = QLabel(
-            "Синхронизация словаря, настроек и истории usage через Google Drive.\n"
-            "Запускается ежедневно при старте Söyle; изменения настроек уходят\n"
-            "сразу же (с задержкой ~8 секунд). Поля привязанные к железу\n"
-            "(микрофон, модель Whisper, тема) остаются локальными."
+            self.tr(
+                "Синхронизация словаря, настроек и истории usage через Google Drive.\n"
+                "Запускается ежедневно при старте Söyle; изменения настроек уходят\n"
+                "сразу же (с задержкой ~8 секунд). Поля привязанные к железу\n"
+                "(микрофон, модель Whisper, тема) остаются локальными."
+            )
         )
         _cs_desc.setWordWrap(True)
         _cs_desc.setStyleSheet("color: #888; font-size: 11px;")
@@ -373,11 +411,15 @@ class SettingsWindow(QMainWindow):
         layout.addSpacing(16)
 
         btn_row = QHBoxLayout()
-        self._cs_connect_btn = QPushButton("Подключить Google Drive")
+        self._cs_connect_btn = QPushButton(
+            self.tr("Подключить Google Drive")
+        )
         self._cs_connect_btn.clicked.connect(self._on_cloud_sync_connect)
-        self._cs_sync_now_btn = QPushButton("Синхронизировать сейчас")
+        self._cs_sync_now_btn = QPushButton(
+            self.tr("Синхронизировать сейчас")
+        )
         self._cs_sync_now_btn.clicked.connect(self._on_cloud_sync_sync_now)
-        self._cs_disconnect_btn = QPushButton("Отключить")
+        self._cs_disconnect_btn = QPushButton(self.tr("Отключить"))
         self._cs_disconnect_btn.clicked.connect(self._on_cloud_sync_disconnect)
         btn_row.addWidget(self._cs_connect_btn)
         btn_row.addWidget(self._cs_sync_now_btn)
@@ -391,17 +433,19 @@ class SettingsWindow(QMainWindow):
 
     def _cloud_sync_status_text(self) -> str:
         if self._cloud_sync is not None and self._cloud_sync.is_connected:
-            return "✓ Подключено к Google Drive"
-        return "Не подключено"
+            return self.tr("✓ Подключено к Google Drive")
+        return self.tr("Не подключено")
 
     def _cloud_sync_last_synced_text(self) -> str:
         if self._cloud_sync is None:
             return ""
         last = self._cloud_sync.last_synced_at
         if last is None:
-            return "Последняя синхронизация: никогда"
+            return self.tr("Последняя синхронизация: никогда")
         local = last.astimezone()
-        return f"Последняя синхронизация: {local.strftime('%Y-%m-%d %H:%M')}"
+        return self.tr("Последняя синхронизация: ") + local.strftime(
+            "%Y-%m-%d %H:%M"
+        )
 
     def _refresh_cloud_sync_buttons(self) -> None:
         connected = self._cloud_sync is not None and self._cloud_sync.is_connected
@@ -414,8 +458,10 @@ class SettingsWindow(QMainWindow):
         if self._cloud_sync is None:
             return
         self._toast(
-            "Söyle — Cloud Sync",
-            "Открыл браузер для авторизации в Google. Подтвердите и вернитесь.",
+            self.tr("Söyle — Cloud Sync"),
+            self.tr(
+                "Открыл браузер для авторизации в Google. Подтвердите и вернитесь."
+            ),
             level="info",
         )
         runnable = AsyncRunnable(
@@ -453,18 +499,24 @@ class SettingsWindow(QMainWindow):
 
         if dict_option is None and remote_cfg is None:
             self._toast(
-                "Söyle — Cloud Sync", "Подключено. Backup начнётся автоматически.",
+                self.tr("Söyle — Cloud Sync"),
+                self.tr("Подключено. Backup начнётся автоматически."),
             )
             return
 
         # --- Dict restore prompt (Phase 1) ---
         if dict_option is not None:
             box = QMessageBox(self)
-            box.setWindowTitle("Söyle — найден backup")
+            box.setWindowTitle(self.tr("Söyle — найден backup"))
             box.setText(
-                f"В Google Drive найден backup словаря: {dict_option.term_count} терминов "
-                f"(обновлён {dict_option.last_modified.strftime('%Y-%m-%d')}).\n\n"
-                f"Объединить с локальным словарём сейчас?"
+                self.tr(
+                    "В Google Drive найден backup словаря: {count} терминов "
+                    "(обновлён {date}).\n\n"
+                    "Объединить с локальным словарём сейчас?"
+                ).format(
+                    count=dict_option.term_count,
+                    date=dict_option.last_modified.strftime("%Y-%m-%d"),
+                )
             )
             box.setStandardButtons(
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
@@ -481,10 +533,12 @@ class SettingsWindow(QMainWindow):
 
             response = QMessageBox.question(
                 self,
-                "Söyle — настройки с другого устройства",
-                "Найдены настройки с другого устройства. Применить?\n"
-                "(Локальные значения для микрофона, модели Whisper и темы\n"
-                "оформления останутся как есть.)",
+                self.tr("Söyle — настройки с другого устройства"),
+                self.tr(
+                    "Найдены настройки с другого устройства. Применить?\n"
+                    "(Локальные значения для микрофона, модели Whisper и темы\n"
+                    "оформления останутся как есть.)"
+                ),
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.Yes,
             )
@@ -503,9 +557,11 @@ class SettingsWindow(QMainWindow):
                 # open() repopulates widgets from disk.
                 self._cfg = self._store.load()
                 self._toast(
-                    "Söyle — Cloud Sync",
-                    "Настройки с другого устройства применены. "
-                    "Открой Settings заново, чтобы увидеть значения.",
+                    self.tr("Söyle — Cloud Sync"),
+                    self.tr(
+                        "Настройки с другого устройства применены. "
+                        "Открой Settings заново, чтобы увидеть значения."
+                    ),
                 )
                 self.close()
 
@@ -538,9 +594,11 @@ class SettingsWindow(QMainWindow):
                 # until next config reload/restart.
                 self._on_dictionary_changed()
             self._toast(
-                "Söyle",
-                f"Sync OK. Локально +{result.added_local}, "
-                f"в Drive +{result.added_remote}.",
+                self.tr("Söyle"),
+                self.tr("Sync OK. Локально +{local}, в Drive +{remote}.").format(
+                    local=result.added_local,
+                    remote=result.added_remote,
+                ),
             )
 
     def _on_cloud_sync_disconnect(self) -> None:
@@ -559,10 +617,13 @@ class SettingsWindow(QMainWindow):
         self._refresh_cloud_sync_buttons()
         self._cs_status_label.setText(self._cloud_sync_status_text())
         self._cs_last_synced_label.setText(self._cloud_sync_last_synced_text())
-        self._toast("Söyle — Cloud Sync", "Отключено от Google Drive.")
+        self._toast(
+            self.tr("Söyle — Cloud Sync"),
+            self.tr("Отключено от Google Drive."),
+        )
 
     def _on_action_failed(self, message: str) -> None:
-        self._toast("Söyle — Cloud Sync", message, level="warning")
+        self._toast(self.tr("Söyle — Cloud Sync"), message, level="warning")
 
     def _toast(self, title: str, message: str, *, level: str = "info") -> None:
         """No-op when tray wasn't injected (e.g. standalone test instance)."""
@@ -590,7 +651,9 @@ class SettingsWindow(QMainWindow):
     def _toggle_key_visibility(self, checked: bool) -> None:
         mode = QLineEdit.EchoMode.Normal if checked else QLineEdit.EchoMode.Password
         self._pp_api_key.setEchoMode(mode)
-        self._pp_show_key_btn.setText("Скрыть" if checked else "Показать")
+        self._pp_show_key_btn.setText(
+            self.tr("Скрыть") if checked else self.tr("Показать")
+        )
 
     def _clear_api_key_clicked(self) -> None:
         if self._store.get_api_key() is None and not self._pp_api_key.text():
@@ -599,10 +662,12 @@ class SettingsWindow(QMainWindow):
             return
         resp = QMessageBox.question(
             self,
-            "Söyle",
-            "Удалить сохранённый API-ключ из Windows Credential Manager?\n"
-            "Постобработка вернётся к выводу сырых транскриптов, пока "
-            "не задан новый ключ.",
+            self.tr("Söyle"),
+            self.tr(
+                "Удалить сохранённый API-ключ из Windows Credential Manager?\n"
+                "Постобработка вернётся к выводу сырых транскриптов, пока "
+                "не задан новый ключ."
+            ),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
@@ -619,12 +684,17 @@ class SettingsWindow(QMainWindow):
             tail = key[-4:] if len(key) >= 4 else "••••"
             head = key[:10] if len(key) >= 10 else key
             self._pp_key_status.setText(
-                f"✓ Ключ сохранён: {head}…{tail}  ·  хранится в Windows Credential Manager"
+                self.tr(
+                    "✓ Ключ сохранён: {head}…{tail}"
+                    "  ·  хранится в Windows Credential Manager"
+                ).format(head=head, tail=tail)
             )
             self._pp_clear_key_btn.setEnabled(True)
         else:
             self._pp_key_status.setText(
-                "✗ Ключ не задан — постобработка работает в fallback-режиме"
+                self.tr(
+                    "✗ Ключ не задан — постобработка работает в fallback-режиме"
+                )
             )
             self._pp_clear_key_btn.setEnabled(False)
 
@@ -634,28 +704,47 @@ class SettingsWindow(QMainWindow):
         self._ui_theme = QComboBox()
         self._ui_theme.addItems(["dark", "light", "system"])
         self._ui_theme.setCurrentText(self._cfg.ui.theme)
-        layout.addRow("Тема:", self._ui_theme)
-        self._ui_sound = QCheckBox("Звуковые сигналы")
+        layout.addRow(self.tr("Тема:"), self._ui_theme)
+
+        self._ui_language = QComboBox()
+        self._ui_language.addItem(self.tr("Системный"), "system")
+        self._ui_language.addItem("Русский", "ru")
+        self._ui_language.addItem("Қазақша", "kk")
+        self._ui_language.addItem("English", "en")
+        lang_idx = self._ui_language.findData(self._cfg.ui.language)
+        self._ui_language.setCurrentIndex(max(0, lang_idx))
+        layout.addRow(self.tr("Язык интерфейса:"), self._ui_language)
+        # Remember the value at open time so _save can detect a change and
+        # prompt for restart (language applies on next launch).
+        self._ui_language_original = self._cfg.ui.language
+
+        self._ui_sound = QCheckBox(self.tr("Звуковые сигналы"))
         self._ui_sound.setChecked(self._cfg.ui.sound_enabled)
         layout.addRow(self._ui_sound)
         self._ui_floating = QCheckBox(
-            "Показать floating-кнопку для диктовки мышью"
+            self.tr("Показать floating-кнопку для диктовки мышью")
         )
         self._ui_floating.setChecked(self._cfg.ui.show_floating_button)
         self._ui_floating.setToolTip(
-            "Круглая иконка микрофона в правом нижнем углу. "
-            "Зажми и говори — альтернатива Right Alt."
+            self.tr(
+                "Круглая иконка микрофона в правом нижнем углу. "
+                "Зажми и говори — альтернатива Right Alt."
+            )
         )
         layout.addRow(self._ui_floating)
-        self._beh_autostart = QCheckBox("Запуск при старте Windows")
+        self._beh_autostart = QCheckBox(self.tr("Запуск при старте Windows"))
         self._beh_autostart.setChecked(self._cfg.behavior.autostart)
         layout.addRow(self._beh_autostart)
         self._beh_inject = QComboBox()
-        self._beh_inject.addItem("Буфер обмена (быстрее, совместимо)", "clipboard")
-        self._beh_inject.addItem("Эмуляция клавиш (не трогает буфер)", "keystroke")
+        self._beh_inject.addItem(
+            self.tr("Буфер обмена (быстрее, совместимо)"), "clipboard"
+        )
+        self._beh_inject.addItem(
+            self.tr("Эмуляция клавиш (не трогает буфер)"), "keystroke"
+        )
         idx = self._beh_inject.findData(self._cfg.behavior.inject_method)
         self._beh_inject.setCurrentIndex(max(0, idx))
-        layout.addRow("Метод вставки:", self._beh_inject)
+        layout.addRow(self.tr("Метод вставки:"), self._beh_inject)
 
         self._beh_cost_limit = QDoubleSpinBox()
         self._beh_cost_limit.setDecimals(2)
@@ -664,9 +753,9 @@ class SettingsWindow(QMainWindow):
         self._beh_cost_limit.setSuffix(" $")
         self._beh_cost_limit.setValue(self._cfg.behavior.monthly_cost_limit_usd)
         self._beh_cost_limit.setToolTip(
-            "Предупреждение в трее при превышении. 0 = выключено."
+            self.tr("Предупреждение в трее при превышении. 0 = выключено.")
         )
-        layout.addRow("Лимит в месяц:", self._beh_cost_limit)
+        layout.addRow(self.tr("Лимит в месяц:"), self._beh_cost_limit)
         return w
 
     def _build_dictionary_tab(self) -> QWidget:
@@ -674,8 +763,10 @@ class SettingsWindow(QMainWindow):
         layout = QVBoxLayout(w)
         layout.addWidget(
             QLabel(
-                "Термины из словаря подсказываются Whisper при распознавании "
-                "и LLM при полировке (имена, бренды, техническая лексика)."
+                self.tr(
+                    "Термины из словаря подсказываются Whisper при распознавании "
+                    "и LLM при полировке (имена, бренды, техническая лексика)."
+                )
             )
         )
 
@@ -687,17 +778,17 @@ class SettingsWindow(QMainWindow):
         self._dict_input = QLineEdit()
         self._dict_input.setPlaceholderText("Söyle, OpenRouter, Nurgisa ...")
         entry_row.addWidget(self._dict_input, 1)
-        btn_add = QPushButton("Добавить")
+        btn_add = QPushButton(self.tr("Добавить"))
         btn_add.clicked.connect(self._dict_add_clicked)
         entry_row.addWidget(btn_add)
         self._dict_input.returnPressed.connect(self._dict_add_clicked)
         layout.addLayout(entry_row)
 
         button_row = QHBoxLayout()
-        btn_remove = QPushButton("Удалить выбранные")
+        btn_remove = QPushButton(self.tr("Удалить выбранные"))
         btn_remove.clicked.connect(self._dict_remove_selected)
         button_row.addWidget(btn_remove)
-        btn_clear = QPushButton("Очистить всё")
+        btn_clear = QPushButton(self.tr("Очистить всё"))
         btn_clear.clicked.connect(self._dict_clear_clicked)
         button_row.addWidget(btn_clear)
         button_row.addStretch()
@@ -733,7 +824,11 @@ class SettingsWindow(QMainWindow):
         layout = QVBoxLayout(w)
         layout.addWidget(QLabel(f"Söyle v{__version__}"))
         layout.addWidget(
-            QLabel("Локальная диктовка через Whisper + OpenRouter для постобработки.")
+            QLabel(
+                self.tr(
+                    "Локальная диктовка через Whisper + OpenRouter для постобработки."
+                )
+            )
         )
         layout.addStretch()
         return w
@@ -788,6 +883,7 @@ class SettingsWindow(QMainWindow):
             self._refresh_key_status()
 
         self._cfg.ui.theme = self._ui_theme.currentText()  # type: ignore[assignment]
+        self._cfg.ui.language = self._ui_language.currentData()
         self._cfg.ui.sound_enabled = self._ui_sound.isChecked()
         self._cfg.ui.show_floating_button = self._ui_floating.isChecked()
         self._cfg.behavior.autostart = self._beh_autostart.isChecked()
@@ -796,3 +892,10 @@ class SettingsWindow(QMainWindow):
 
         self._store.save(self._cfg)
         self.settings_saved.emit()
+
+        if self._cfg.ui.language != self._ui_language_original:
+            self._ui_language_original = self._cfg.ui.language
+            self._toast(
+                self.tr("Söyle"),
+                self.tr("Язык интерфейса изменится после перезапуска."),
+            )
