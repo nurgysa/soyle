@@ -117,6 +117,14 @@ class SoyleApp(QObject):
         self._store = ConfigStore()
         self._dict_store = DictionaryStore()
         self._cfg = self._store.load()
+        # Install the UI translator before any widget is built so tr() in
+        # widget constructors picks up the active language. Held on self so
+        # Qt does not garbage-collect the translator (which drops strings).
+        from soyle.ui.i18n import install_translator, resolve_language
+
+        self._translator = install_translator(
+            self._qapp, resolve_language(self._cfg.ui.language)
+        )
         self._usage = UsageTracker(default_config_path().parent / "usage.json")
         # One-shot guard: show the "bad API key" toast at most once per reload,
         # to avoid spamming the user on every hotkey release while their key
