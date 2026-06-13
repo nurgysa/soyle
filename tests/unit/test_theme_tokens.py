@@ -39,10 +39,22 @@ def test_resolve_theme_passthrough() -> None:
     assert resolve_theme("dark") == "dark"
 
 
-def test_resolve_theme_unknown_defaults_dark() -> None:
-    # No running QApplication in a headless test run → safe dark default.
-    assert resolve_theme("nonsense") == "dark"
+def test_resolve_theme_system_returns_concrete() -> None:
+    # With or without a running QApplication, "system"/unknown must resolve
+    # to a concrete theme — never crash, never return the literal "system".
+    assert resolve_theme("system") in ("light", "dark")
+    assert resolve_theme("nonsense") in ("light", "dark")
+
+
+def test_resolve_theme_defaults_dark_without_app(monkeypatch) -> None:
+    # No running QApplication → OS scheme can't be queried → safe dark
+    # default. Force the no-app branch deterministically; the full suite may
+    # leave a real QApplication instance around, so we can't rely on it.
+    from PySide6.QtGui import QGuiApplication
+
+    monkeypatch.setattr(QGuiApplication, "instance", staticmethod(lambda: None))
     assert resolve_theme("system") == "dark"
+    assert resolve_theme("nonsense") == "dark"
 
 
 def test_active_tokens_maps_concrete_themes() -> None:
