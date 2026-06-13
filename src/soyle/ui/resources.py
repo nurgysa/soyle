@@ -20,3 +20,7 @@ def prompt_path(name: str) -> Path:
     return _bundle_root() / "prompts" / name
 
 
+def i18n_path(name: str) -> Path:
+    return _bundle_root() / "i18n" / name
+
+
