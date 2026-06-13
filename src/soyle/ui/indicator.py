@@ -7,13 +7,20 @@ from PySide6.QtCore import QPoint, QRect, Qt, QTimer
 from PySide6.QtGui import QColor, QCursor, QPainter, QPaintEvent, QPen
 from PySide6.QtWidgets import QWidget
 
+from soyle.ui.theme.tokens import (
+    STATE_ERROR,
+    STATE_POLISHING,
+    STATE_RECORDING,
+    STATE_TRANSCRIBING,
+)
+
 Stage = Literal["recording", "transcribing", "polishing", "hidden", "error"]
 
 STAGE_COLORS: dict[Stage, QColor] = {
-    "recording": QColor("#e74c3c"),
-    "transcribing": QColor("#f39c12"),
-    "polishing": QColor("#3498db"),
-    "error": QColor("#95a5a6"),
+    "recording": QColor(STATE_RECORDING),
+    "transcribing": QColor(STATE_TRANSCRIBING),
+    "polishing": QColor(STATE_POLISHING),
+    "error": QColor(STATE_ERROR),
     "hidden": QColor("#000000"),
 }
 
@@ -90,5 +97,18 @@ class Indicator(QWidget):
         rect = QRect(0, 0, self.width() - 1, self.height() - 1)
         p.drawRoundedRect(rect, 18, 18)
 
+        # Status dot on the left — fills the gap the old +90px offset left empty.
+        dot_d = 10
+        dot_x = 16
+        dot_y = (self.height() - dot_d) // 2
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(STAGE_COLORS[self._stage])
+        p.drawEllipse(dot_x, dot_y, dot_d, dot_d)
+
+        # Text sits just right of the dot, vertically centered.
         p.setPen(QColor("#ffffff"))
-        p.drawText(rect.adjusted(90, 0, -10, 0), Qt.AlignmentFlag.AlignVCenter, self._text)
+        p.drawText(
+            rect.adjusted(36, 0, -12, 0),
+            Qt.AlignmentFlag.AlignVCenter,
+            self._text,
+        )

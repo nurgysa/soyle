@@ -24,9 +24,6 @@ SEP = ";" if sys.platform == "win32" else ":"
 ADD_DATA = [
     (SRC / "assets", "assets"),
     (SRC / "prompts", "prompts"),
-    # IMPORTANT: destination must mirror the path `resources.qss_path()`
-    # looks up — it resolves `<bundle_root>/ui/qss/<theme>.qss`.
-    (SRC / "ui" / "qss", "ui/qss"),
 ]
 CUDNN_DIR = ROOT / "vendor" / "cudnn"
 
