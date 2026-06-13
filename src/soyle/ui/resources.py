@@ -20,5 +20,3 @@ def prompt_path(name: str) -> Path:
     return _bundle_root() / "prompts" / name
 
 
-def qss_path(theme: str) -> Path:
-    return _bundle_root() / "ui" / "qss" / f"{theme}.qss"

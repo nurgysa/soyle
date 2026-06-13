@@ -39,7 +39,7 @@ from soyle.platform.single_instance import SingleInstance
 from soyle.ui.async_runnable import AsyncRunnable
 from soyle.ui.floating_button import FloatingButton
 from soyle.ui.indicator import Indicator
-from soyle.ui.resources import prompt_path, qss_path
+from soyle.ui.resources import prompt_path
 from soyle.ui.settings import SettingsWindow
 from soyle.ui.tray import TrayIcon
 
@@ -596,18 +596,10 @@ class SoyleApp(QObject):
             disable_autostart()
 
     def _apply_theme(self) -> None:
-        theme = self._cfg.ui.theme
-        if theme == "system":
-            # Clear any previously-applied stylesheet — otherwise switching
-            # dark/light → system would leave the old theme stuck.
-            self._qapp.setStyleSheet("")
-            return
-        qss = qss_path(theme)
-        if not qss.exists():
-            log.warning("theme_file_missing", theme=theme, path=str(qss))
-            self._qapp.setStyleSheet("")
-            return
-        self._qapp.setStyleSheet(qss.read_text(encoding="utf-8"))
+        from soyle.ui.theme.qss import render_qss
+        from soyle.ui.theme.tokens import active_tokens
+
+        self._qapp.setStyleSheet(render_qss(active_tokens(self._cfg.ui.theme)))
 
     def _warm_up_transcriber(self) -> None:
         try:
