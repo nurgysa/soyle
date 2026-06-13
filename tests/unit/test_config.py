@@ -415,3 +415,17 @@ def test_save_bypass_hook_is_per_call_not_sticky(tmp_path: Path) -> None:
     store.save(cfg, _bypass_hook=True)   # bypassed again
 
     assert calls == [1]  # exactly one regular save fired the hook
+
+
+def test_ui_language_default_is_system() -> None:
+    assert UIConfig().language == "system"
+
+
+def test_ui_language_accepts_supported() -> None:
+    for lang in ("system", "ru", "kk", "en"):
+        assert UIConfig(language=lang).language == lang
+
+
+def test_ui_language_rejects_unknown() -> None:
+    with pytest.raises(ValueError):
+        UIConfig(language="fr")

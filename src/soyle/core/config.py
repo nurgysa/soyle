@@ -94,6 +94,9 @@ class UIConfig(BaseModel):
     indicator_position: Literal["cursor", "tray_only"] = "cursor"
     indicator_follow_mouse: bool = True
     theme: Literal["dark", "light", "system"] = "dark"
+    # UI language. "system" resolves to ru/kk/en from the OS locale at
+    # startup. Stored locally (like `theme`); not synced via Cloud Sync.
+    language: Literal["system", "ru", "kk", "en"] = "system"
     sound_enabled: bool = True
     # Phase A: always-visible floating mic pill in bottom-right corner.
     # Mouse press-and-hold = PTT alternative to Right Alt. Phase B will
