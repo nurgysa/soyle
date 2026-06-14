@@ -443,8 +443,8 @@ class SettingsWindow(QMainWindow):
         if last is None:
             return self.tr("Последняя синхронизация: никогда")
         local = last.astimezone()
-        return self.tr("Последняя синхронизация: ") + local.strftime(
-            "%Y-%m-%d %H:%M"
+        return self.tr("Последняя синхронизация: {time}").format(
+            time=local.strftime("%Y-%m-%d %H:%M")
         )
 
     def _refresh_cloud_sync_buttons(self) -> None:
@@ -776,7 +776,7 @@ class SettingsWindow(QMainWindow):
 
         entry_row = QHBoxLayout()
         self._dict_input = QLineEdit()
-        self._dict_input.setPlaceholderText("Söyle, OpenRouter, Nurgisa ...")
+        self._dict_input.setPlaceholderText(self.tr("Söyle, OpenRouter, Nurgisa ..."))
         entry_row.addWidget(self._dict_input, 1)
         btn_add = QPushButton(self.tr("Добавить"))
         btn_add.clicked.connect(self._dict_add_clicked)
