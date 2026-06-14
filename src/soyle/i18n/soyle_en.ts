@@ -595,6 +595,27 @@ Post-processing will revert to raw transcripts until a new key is provided.</tra
         <source>Логов пока нет</source>
         <translation>No logs yet</translation>
     </message>
+    <message>
+        <location filename="../app.py" line="793"/>
+        <source>Söyle — непредвиденная ошибка</source>
+        <translation>Söyle — unexpected error</translation>
+    </message>
+    <message>
+        <location filename="../app.py" line="798"/>
+        <source>Приложите этот файл к багрепорту.</source>
+        <translation>Attach this file to the bug report.</translation>
+    </message>
+    <message>
+        <location filename="../app.py" line="803"/>
+        <source>Лог сохранён:
+{path}
+
+</source>
+        <translation>Log saved:
+{path}
+
+</translation>
+    </message>
 </context>
 <context>
     <name>TrayIcon</name>

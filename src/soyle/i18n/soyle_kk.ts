@@ -587,6 +587,24 @@
         <source>Логов пока нет</source>
         <translation type="unfinished"></translation>
     </message>
+    <message>
+        <location filename="../app.py" line="793"/>
+        <source>Söyle — непредвиденная ошибка</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../app.py" line="798"/>
+        <source>Приложите этот файл к багрепорту.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../app.py" line="803"/>
+        <source>Лог сохранён:
+{path}
+
+</source>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 <context>
     <name>TrayIcon</name>

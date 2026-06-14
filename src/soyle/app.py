@@ -15,7 +15,7 @@ from typing import Any
 import keyboard
 import numpy as np
 import structlog
-from PySide6.QtCore import QObject, QRunnable, QThreadPool, QTimer, Signal
+from PySide6.QtCore import QCoreApplication, QObject, QRunnable, QThreadPool, QTimer, Signal
 from PySide6.QtWidgets import QApplication, QMessageBox
 
 from soyle.core.bus import Event, EventBus
@@ -789,11 +789,22 @@ def _install_crash_handler() -> None:
             if qapp is not None:
                 box = QMessageBox()
                 box.setIcon(QMessageBox.Icon.Critical)
-                box.setWindowTitle("Söyle — непредвиденная ошибка")
+                box.setWindowTitle(
+                    QCoreApplication.translate(
+                        "SoyleApp", "Söyle — непредвиденная ошибка"
+                    )
+                )
                 box.setText(f"{exc_type.__name__}: {exc_value}")
-                info = "Приложите этот файл к багрепорту."
+                info = QCoreApplication.translate(
+                    "SoyleApp", "Приложите этот файл к багрепорту."
+                )
                 if crash_path is not None:
-                    info = f"Лог сохранён:\n{crash_path}\n\n" + info
+                    info = (
+                        QCoreApplication.translate(
+                            "SoyleApp", "Лог сохранён:\n{path}\n\n"
+                        ).format(path=crash_path)
+                        + info
+                    )
                 box.setInformativeText(info)
                 box.setStandardButtons(QMessageBox.StandardButton.Ok)
                 box.exec()
