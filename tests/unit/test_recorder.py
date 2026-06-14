@@ -1,6 +1,7 @@
 """Tests for Recorder's pure VAD-trim function."""
 from __future__ import annotations
 
+import math
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -8,7 +9,7 @@ import pytest
 
 from soyle.core.bus import Event, EventBus
 from soyle.core.errors import AudioDeviceError
-from soyle.core.recorder import Recorder, compute_rms, trim_silence_endpoints
+from soyle.core.recorder import Recorder, compute_rms, normalize_level, trim_silence_endpoints
 
 
 def test_compute_rms_of_silence_is_zero() -> None:
@@ -113,3 +114,24 @@ def test_recorder_raises_when_no_input_device(mocker) -> None:
     rec = Recorder(bus=bus)
     with pytest.raises(AudioDeviceError):
         rec.start()
+
+
+def test_normalize_level_zero_is_zero() -> None:
+    assert normalize_level(0.0) == 0.0
+
+
+def test_normalize_level_at_ref_is_one() -> None:
+    assert normalize_level(0.15, ref=0.15) == 1.0
+
+
+def test_normalize_level_clamps_above_ref() -> None:
+    assert normalize_level(1.0, ref=0.15) == 1.0
+
+
+def test_normalize_level_negative_is_zero() -> None:
+    assert normalize_level(-0.5) == 0.0
+
+
+def test_normalize_level_sqrt_curve_midpoint() -> None:
+    # quarter of ref energy -> sqrt(0.25) = 0.5 of the bar
+    assert math.isclose(normalize_level(0.15 * 0.25, ref=0.15), 0.5, abs_tol=1e-9)

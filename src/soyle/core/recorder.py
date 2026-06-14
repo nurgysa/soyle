@@ -5,6 +5,7 @@ this module provides the pure helpers first to enable TDD.
 """
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from queue import Queue
 from typing import Any
@@ -21,6 +22,17 @@ def compute_rms(audio: np.ndarray) -> float:
     if audio.size == 0:
         return 0.0
     return float(np.sqrt(np.mean(audio.astype(np.float64) ** 2)))
+
+
+def normalize_level(rms: float, *, ref: float = 0.15) -> float:
+    """Map a raw RMS value to a 0..1 display level with a sqrt curve.
+
+    ``ref`` is the RMS treated as "full bar". The sqrt makes quiet speech
+    still move the bars perceptibly. Clamped to [0, 1]; negative/NaN-safe.
+    """
+    if not rms > 0.0:  # also catches NaN
+        return 0.0
+    return min(1.0, math.sqrt(rms / ref))
 
 
 def trim_silence_endpoints(
