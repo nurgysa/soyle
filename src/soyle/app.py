@@ -15,7 +15,7 @@ from typing import Any
 import keyboard
 import numpy as np
 import structlog
-from PySide6.QtCore import QObject, QRunnable, QThreadPool, QTimer, Signal
+from PySide6.QtCore import QCoreApplication, QObject, QRunnable, QThreadPool, QTimer, Signal
 from PySide6.QtWidgets import QApplication, QMessageBox
 
 from soyle.core.bus import Event, EventBus
@@ -239,7 +239,7 @@ class SoyleApp(QObject):
             self._hotkey.start()
         except Exception as exc:
             log.error("hotkey_registration_failed", error=str(exc))
-            self._tray.toast("Söyle", "Не удалось зарегистрировать хоткей. Откройте настройки.")
+            self._tray.toast(self.tr("Söyle"), self.tr("Не удалось зарегистрировать хоткей. Откройте настройки."))
             self._show_settings()
 
         # Esc-to-cancel: register a non-suppressing global hook. The callback
@@ -319,7 +319,7 @@ class SoyleApp(QObject):
         self._postprocess.set_mode(mode)
         self._tray.set_mode(mode)
         label = "Rewrite" if mode == "rewrite" else "Polish"
-        self._tray.toast("Söyle", f"Режим LLM: {label}")
+        self._tray.toast(self.tr("Söyle"), self.tr("Режим LLM: {label}").format(label=label))
 
     # ---- Hotkey handlers ----
 
@@ -336,7 +336,7 @@ class SoyleApp(QObject):
             self._tray.set_recording(True)
             self._indicator.show_recording()
         except AudioDeviceError as exc:
-            self._tray.toast("Söyle", f"Микрофон: {exc}")
+            self._tray.toast(self.tr("Söyle"), self.tr("Микрофон: {exc}").format(exc=exc))
             self._state.reset_to_idle()
 
     def _on_hotkey_released(self, _: dict[str, Any]) -> None:
@@ -367,7 +367,7 @@ class SoyleApp(QObject):
         trimmed_duration_ms = int(len(audio) * 1000 / self._cfg.audio.sample_rate)
 
         if trimmed_duration_ms < self._cfg.audio.vad_min_speech_ms:
-            self._indicator.flash_error("Слишком коротко")
+            self._indicator.flash_error(self.tr("Слишком коротко"))
             self._state.reset_to_idle()
             return
 
@@ -395,7 +395,7 @@ class SoyleApp(QObject):
             log.warning("cancel_stop_failed", error=str(exc))
         self._state.reset_to_idle()
         self._tray.set_recording(False)
-        self._indicator.flash_error("Отменено")
+        self._indicator.flash_error(self.tr("Отменено"))
         log.info("recording_cancelled")
 
     # ---- Inference callbacks (always invoked from worker thread) ----
@@ -418,7 +418,7 @@ class SoyleApp(QObject):
         self._inference_error.emit(str(exc))
 
     def _handle_inference_error(self, _message: str) -> None:
-        self._indicator.flash_error("Ошибка распознавания")
+        self._indicator.flash_error(self.tr("Ошибка распознавания"))
         self._state.reset_to_idle()
 
     def _finish_inference(
@@ -437,7 +437,7 @@ class SoyleApp(QObject):
             state=str(self._state.current),
         )
         if not text.strip():
-            self._indicator.flash_error("Ничего не распознано")
+            self._indicator.flash_error(self.tr("Ничего не распознано"))
             self._state.reset_to_idle()
             return
 
@@ -453,8 +453,8 @@ class SoyleApp(QObject):
 
         if inject_result.blocked:
             self._tray.toast(
-                "Söyle",
-                "Терминал: текст в буфере — вставьте вручную (Ctrl+V)",
+                self.tr("Söyle"),
+                self.tr("Терминал: текст в буфере — вставьте вручную (Ctrl+V)"),
             )
         elif fallback:
             self._show_fallback_toast(reason)
@@ -477,20 +477,20 @@ class SoyleApp(QObject):
             if not self._auth_warned:
                 self._auth_warned = True
                 self._tray.toast(
-                    "Söyle",
-                    "Проверьте API-ключ OpenRouter в настройках",
+                    self.tr("Söyle"),
+                    self.tr("Проверьте API-ключ OpenRouter в настройках"),
                 )
             return
         if reason == "http_429":
-            self._tray.toast("Söyle", "OpenRouter: превышен лимит, попробуйте позже")
+            self._tray.toast(self.tr("Söyle"), self.tr("OpenRouter: превышен лимит, попробуйте позже"))
             return
         if reason in ("timeout", "network_error"):
-            self._tray.toast("Söyle", "Сеть недоступна — вставлен сырой текст")
+            self._tray.toast(self.tr("Söyle"), self.tr("Сеть недоступна — вставлен сырой текст"))
             return
         if reason in ("empty_input", "no_api_key"):
             # Silent: either nothing was said or the user intentionally has no key.
             return
-        self._tray.toast("Söyle", "LLM недоступна — вставлен сырой текст")
+        self._tray.toast(self.tr("Söyle"), self.tr("LLM недоступна — вставлен сырой текст"))
 
     def _refresh_usage_menu(self) -> None:
         self._tray.set_usage_text(self._usage.summary_line())
@@ -509,8 +509,10 @@ class SoyleApp(QObject):
         previous = current - new_cost
         if previous < limit <= current:
             self._tray.toast(
-                "Söyle",
-                f"Месячный лимит превышен: ${current:.4f} из ${limit:.2f}",
+                self.tr("Söyle"),
+                self.tr("Месячный лимит превышен: ${current} из ${limit}").format(
+                    current=f"{current:.4f}", limit=f"{limit:.2f}"
+                ),
                 level="warning",
             )
             log.warning(
@@ -544,9 +546,11 @@ class SoyleApp(QObject):
         if self._settings_window is not None:
             self._settings_window.focus_api_key_setup()
         self._tray.toast(
-            "Добро пожаловать в Söyle",
-            "Вставьте OpenRouter API-ключ, чтобы включить полировку. "
-            "Без ключа можно работать — получите сырую транскрипцию.",
+            self.tr("Добро пожаловать в Söyle"),
+            self.tr(
+                "Вставьте OpenRouter API-ключ, чтобы включить полировку. "
+                "Без ключа можно работать — получите сырую транскрипцию."
+            ),
         )
         log.info("first_run_wizard_shown")
         # Offer Drive sync after the API-key toast has time to land; modal
@@ -557,9 +561,11 @@ class SoyleApp(QObject):
 
     def _offer_drive_sync_step(self) -> None:
         self._tray.toast(
-            "Söyle — Cloud Sync",
-            "Подключите Google Drive в Settings → Cloud Sync, чтобы "
-            "синхронизировать словарь между устройствами и иметь backup.",
+            self.tr("Söyle — Cloud Sync"),
+            self.tr(
+                "Подключите Google Drive в Settings → Cloud Sync, чтобы "
+                "синхронизировать словарь между устройствами и иметь backup."
+            ),
             level="info",
         )
 
@@ -594,7 +600,7 @@ class SoyleApp(QObject):
         self._refresh_usage_menu()
         self._sync_autostart()
         self._apply_theme()
-        self._tray.toast("Söyle", "Настройки сохранены")
+        self._tray.toast(self.tr("Söyle"), self.tr("Настройки сохранены"))
 
     def _sync_autostart(self) -> None:
         if self._cfg.behavior.autostart:
@@ -641,27 +647,27 @@ class SoyleApp(QObject):
         """
         if result.outcome is SyncOutcome.AUTH_REVOKED:
             self._tray.toast(
-                "Söyle",
-                "Google Drive отключён. Подключите заново в Settings.",
+                self.tr("Söyle"),
+                self.tr("Google Drive отключён. Подключите заново в Settings."),
                 level="warning",
             )
         elif result.outcome is SyncOutcome.QUOTA:
             self._tray.toast(
-                "Söyle",
-                "Google Drive переполнен. Освободите место или disconnect.",
+                self.tr("Söyle"),
+                self.tr("Google Drive переполнен. Освободите место или disconnect."),
                 level="warning",
             )
         elif result.outcome is SyncOutcome.APP_SUSPENDED:
             self._tray.toast(
-                "Söyle — Google заблокировал приложение",
-                "Контакт: andasbek.nurgysa@gmail.com",
+                self.tr("Söyle — Google заблокировал приложение"),
+                self.tr("Контакт: andasbek.nurgysa@gmail.com"),
                 level="critical",
             )
         elif result.outcome is SyncOutcome.OK and result.added_local > 0:
             self._refresh_dictionary_consumers()
             self._tray.toast(
-                "Söyle",
-                f"Sync: добавлено {result.added_local} терминов.",
+                self.tr("Söyle"),
+                self.tr("Sync: добавлено {n} терминов.").format(n=result.added_local),
                 level="info",
             )
 
@@ -685,7 +691,7 @@ class SoyleApp(QObject):
         if log_path.exists():
             subprocess.Popen(["notepad.exe", str(log_path)])
         else:
-            self._tray.toast("Söyle", "Логов пока нет")
+            self._tray.toast(self.tr("Söyle"), self.tr("Логов пока нет"))
 
 
 def _configure_logging() -> None:
@@ -783,11 +789,22 @@ def _install_crash_handler() -> None:
             if qapp is not None:
                 box = QMessageBox()
                 box.setIcon(QMessageBox.Icon.Critical)
-                box.setWindowTitle("Söyle — непредвиденная ошибка")
+                box.setWindowTitle(
+                    QCoreApplication.translate(
+                        "SoyleApp", "Söyle — непредвиденная ошибка"
+                    )
+                )
                 box.setText(f"{exc_type.__name__}: {exc_value}")
-                info = "Приложите этот файл к багрепорту."
+                info = QCoreApplication.translate(
+                    "SoyleApp", "Приложите этот файл к багрепорту."
+                )
                 if crash_path is not None:
-                    info = f"Лог сохранён:\n{crash_path}\n\n" + info
+                    info = (
+                        QCoreApplication.translate(
+                            "SoyleApp", "Лог сохранён:\n{path}\n\n"
+                        ).format(path=crash_path)
+                        + info
+                    )
                 box.setInformativeText(info)
                 box.setStandardButtons(QMessageBox.StandardButton.Ok)
                 box.exec()

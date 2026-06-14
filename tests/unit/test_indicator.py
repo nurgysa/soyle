@@ -24,4 +24,4 @@ def test_show_recording_sets_stage_and_text(qtbot) -> None:
     qtbot.addWidget(ind)
     ind.show_recording()
     assert ind._stage == "recording"
-    assert ind._text == "Recording"
+    assert ind._text == "Запись"
