@@ -24,6 +24,7 @@ SEP = ";" if sys.platform == "win32" else ":"
 ADD_DATA = [
     (SRC / "assets", "assets"),
     (SRC / "prompts", "prompts"),
+    (SRC / "i18n", "i18n"),
 ]
 CUDNN_DIR = ROOT / "vendor" / "cudnn"
 
