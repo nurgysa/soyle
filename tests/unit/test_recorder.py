@@ -135,3 +135,22 @@ def test_normalize_level_negative_is_zero() -> None:
 def test_normalize_level_sqrt_curve_midpoint() -> None:
     # quarter of ref energy -> sqrt(0.25) = 0.5 of the bar
     assert math.isclose(normalize_level(0.15 * 0.25, ref=0.15), 0.5, abs_tol=1e-9)
+
+
+def test_current_level_zero_before_any_frame() -> None:
+    rec = Recorder(bus=EventBus())
+    assert rec.current_level() == 0.0
+
+
+def test_current_level_reflects_last_frame() -> None:
+    rec = Recorder(bus=EventBus())
+    frame = np.full(160, 0.1, dtype=np.float32)
+    rec._on_frame(frame)
+    assert rec.current_level() > 0.0
+
+
+def test_current_level_resets_after_stop() -> None:
+    rec = Recorder(bus=EventBus())
+    rec._on_frame(np.full(160, 0.1, dtype=np.float32))
+    rec.stop()
+    assert rec.current_level() == 0.0

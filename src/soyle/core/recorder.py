@@ -88,14 +88,27 @@ class Recorder:
         self._queue: Queue[np.ndarray] = Queue()
         self._stream: Any = None
         self._sample_rate: int = 16000
+        self._latest_rms: float = 0.0
+
+    def _on_frame(self, mono: np.ndarray) -> None:
+        """Store the frame's RMS for live level read-out. Called from the
+        PortAudio callback thread; a single float assignment is atomic in
+        CPython, so no lock is needed for the UI-thread reader."""
+        self._latest_rms = compute_rms(mono)
+
+    def current_level(self) -> float:
+        """Latest frame RMS (0.0 before any frame / after stop)."""
+        return self._latest_rms
 
     def start(self, sample_rate: int = 16000, device: str = "default") -> None:
         self._ensure_input_device_exists()
         self._sample_rate = sample_rate
         self._queue = Queue()
+        self._latest_rms = 0.0
 
         def _callback(indata: np.ndarray, _frames: int, _time_info: Any, _status: Any) -> None:
             mono = indata[:, 0].copy() if indata.ndim > 1 else indata.copy()
+            self._on_frame(mono)
             self._queue.put(mono)
 
         self._stream = sd.InputStream(
@@ -110,11 +123,13 @@ class Recorder:
 
     def stop(self) -> RecordingResult:
         if self._stream is None:
+            self._latest_rms = 0.0
             return RecordingResult(audio=np.zeros(0, np.float32), duration_ms=0, rms_peak=0.0)
 
         self._stream.stop()
         self._stream.close()
         self._stream = None
+        self._latest_rms = 0.0
 
         chunks: list[np.ndarray] = []
         while not self._queue.empty():
