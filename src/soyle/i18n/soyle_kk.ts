@@ -6,7 +6,7 @@
     <message>
         <location filename="../ui/floating_button.py" line="65"/>
         <source>Зажмите для записи</source>
-        <translation type="unfinished"></translation>
+        <translation>Жазу үшін басып тұрыңыз</translation>
     </message>
 </context>
 <context>
@@ -14,17 +14,17 @@
     <message>
         <location filename="../ui/indicator.py" line="57"/>
         <source>Запись</source>
-        <translation type="unfinished"></translation>
+        <translation>Жазу</translation>
     </message>
     <message>
         <location filename="../ui/indicator.py" line="64"/>
         <source>Распознавание…</source>
-        <translation type="unfinished"></translation>
+        <translation>Тану…</translation>
     </message>
     <message>
         <location filename="../ui/indicator.py" line="69"/>
         <source>Обработка…</source>
-        <translation type="unfinished"></translation>
+        <translation>Өңдеу…</translation>
     </message>
 </context>
 <context>
@@ -32,195 +32,195 @@
     <message>
         <location filename="../ui/settings.py" line="84"/>
         <source>Söyle — настройки</source>
-        <translation type="unfinished"></translation>
+        <translation>Söyle — баптаулар</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="91"/>
         <source>Хоткей</source>
-        <translation type="unfinished"></translation>
+        <translation>Хоткей</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="92"/>
         <source>Аудио</source>
-        <translation type="unfinished"></translation>
+        <translation>Аудио</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="95"/>
         <source>Словарь</source>
-        <translation type="unfinished"></translation>
+        <translation>Сөздік</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="100"/>
         <source>Внешний вид</source>
-        <translation type="unfinished"></translation>
+        <translation>Сыртқы түр</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="101"/>
         <source>О программе</source>
-        <translation type="unfinished"></translation>
+        <translation>Бағдарлама туралы</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="112"/>
         <source>Сохранить</source>
-        <translation type="unfinished"></translation>
+        <translation>Сақтау</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="115"/>
         <source>Закрыть</source>
-        <translation type="unfinished"></translation>
+        <translation>Жабу</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="144"/>
         <source>Записать…</source>
-        <translation type="unfinished"></translation>
+        <translation>Жазу…</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="147"/>
         <source>Нажать клавишу и распознать её автоматически</source>
-        <translation type="unfinished"></translation>
+        <translation>Пернені басыңыз, ол автоматты түрде анықталады</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="154"/>
         <source>Клавиша:</source>
-        <translation type="unfinished"></translation>
+        <translation>Перне:</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="159"/>
         <location filename="../ui/settings.py" line="321"/>
         <source>Режим:</source>
-        <translation type="unfinished"></translation>
+        <translation>Режим:</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="163"/>
         <source>Debounce (мс):</source>
-        <translation type="unfinished"></translation>
+        <translation>Debounce (мс):</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="182"/>
         <source>Устройство:</source>
-        <translation type="unfinished"></translation>
+        <translation>Құрылғы:</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="186"/>
         <source>Макс. запись (сек):</source>
-        <translation type="unfinished"></translation>
+        <translation>Макс. жазу (сек):</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="189"/>
         <source>Обрезать тишину в начале и конце записи</source>
-        <translation type="unfinished"></translation>
+        <translation>Жазудың басы мен соңындағы үнсіздікті кесу</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="194"/>
         <source>Удаляет тихие фреймы по краям записи. Помогает когда коллеги говорят рядом — их голос будет ниже порога и обрежется.</source>
-        <translation type="unfinished"></translation>
+        <translation>Жазудың шеттеріндегі тыныш кадрларды жояды. Әріптестер жанында сөйлегенде пайдалы — олардың дауысы шектен төмен болып, кесіледі.</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="212"/>
         <source>Порог RMS-энергии для определения тишины. Ниже = пропускает тихую/удалённую речь. Выше = только громкая близкая речь.</source>
-        <translation type="unfinished"></translation>
+        <translation>Үнсіздікті анықтауға арналған RMS-энергия шегі. Төмен = тыныш/алыс сөзді өткізеді. Жоғары = тек қатты жақын сөз.</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="217"/>
         <source>Порог тишины (RMS):</source>
-        <translation type="unfinished"></translation>
+        <translation>Үнсіздік шегі (RMS):</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="238"/>
         <location filename="../ui/settings.py" line="334"/>
         <source>Модель:</source>
-        <translation type="unfinished"></translation>
+        <translation>Модель:</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="242"/>
         <source>Device:</source>
-        <translation type="unfinished"></translation>
+        <translation>Device:</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="246"/>
         <source>Compute type:</source>
-        <translation type="unfinished"></translation>
+        <translation>Compute type:</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="257"/>
         <source>Авто (определять автоматически)</source>
-        <translation type="unfinished"></translation>
+        <translation>Авто (автоматты анықтау)</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="263"/>
         <source>Язык:</source>
-        <translation type="unfinished"></translation>
+        <translation>Тіл:</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="273"/>
         <source>Auto-detect рекомендуется для смешанной RU+EN речи. Принудительный выбор ru/en даёт лучше recognition строго-моноязычной диктовки, но ломает code-switching. Казахский пока ненадёжен — fix в работе (dual-model).</source>
-        <translation type="unfinished"></translation>
+        <translation>Auto-detect аралас RU+EN сөзі үшін ұсынылады. ru/en-ді мәжбүрлеп таңдау таза бір тілді диктовкада жақсырақ жұмыс істейді, бірақ code-switching-ті бұзады. Қазақ тілі әзірше сенімді емес — түзету жұмысы жүріп жатыр (dual-model).</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="287"/>
         <source>Включить постобработку LLM</source>
-        <translation type="unfinished"></translation>
+        <translation>LLM кейінгі өңдеуді қосу</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="293"/>
         <source>Polish — чистка, пунктуация, без переформулирования</source>
-        <translation type="unfinished"></translation>
+        <translation>Polish — тазалау, пунктуация, қайта тұжырымдаусыз</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="297"/>
         <source>Rewrite — активная переформулировка в связный текст</source>
-        <translation type="unfinished"></translation>
+        <translation>Rewrite — мәтінді белсенді қайта тұжырымдау</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="302"/>
         <source>AI Prompt — превратить речь в инструкцию для Claude/ChatGPT/Gemini</source>
-        <translation type="unfinished"></translation>
+        <translation>AI Prompt — сөзді Claude/ChatGPT/Gemini үшін нұсқаулыққа айналдыру</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="308"/>
         <source>Plain Text — текст для документа (Word, email, мессенджер)</source>
-        <translation type="unfinished"></translation>
+        <translation>Plain Text — құжатқа арналған мәтін (Word, email, мессенджер)</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="314"/>
         <source>Task — структурированная задача (Задача / Департамент / Приоритет / Описание)</source>
-        <translation type="unfinished"></translation>
+        <translation>Task — құрылымданған тапсырма (Тапсырма / Бөлім / Басымдық / Сипаттама)</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="338"/>
         <source>Таймаут (сек):</source>
-        <translation type="unfinished"></translation>
+        <translation>Таймаут (сек):</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="348"/>
         <source>sk-or-v1-…</source>
-        <translation type="unfinished"></translation>
+        <translation>sk-or-v1-…</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="350"/>
         <location filename="../ui/settings.py" line="655"/>
         <source>Показать</source>
-        <translation type="unfinished"></translation>
+        <translation>Көрсету</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="354"/>
         <source>Временно сделать ключ видимым</source>
-        <translation type="unfinished"></translation>
+        <translation>Кілтті уақытша көрінетін ету</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="358"/>
         <source>Удалить</source>
-        <translation type="unfinished"></translation>
+        <translation>Жою</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="361"/>
         <source>Стереть сохранённый ключ из Windows Credential Manager</source>
-        <translation type="unfinished"></translation>
+        <translation>Сақталған кілтті Windows Credential Manager-ден өшіру</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="369"/>
         <source>OpenRouter API key:</source>
-        <translation type="unfinished"></translation>
+        <translation>OpenRouter API key:</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="392"/>
@@ -228,42 +228,45 @@
 Запускается ежедневно при старте Söyle; изменения настроек уходят
 сразу же (с задержкой ~8 секунд). Поля привязанные к железу
 (микрофон, модель Whisper, тема) остаются локальными.</source>
-        <translation type="unfinished"></translation>
+        <translation>Сөздік, баптаулар және пайдалану тарихын Google Drive арқылы синхрондау.
+Söyle іске қосылғанда күн сайын орындалады; баптаулардағы өзгерістер
+бірден жіберіледі (~8 секунд кешігумен). Жабдыққа байланысты
+өрістер (микрофон, Whisper моделі, тема) жергілікті күйінде қалады.</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="415"/>
         <source>Подключить Google Drive</source>
-        <translation type="unfinished"></translation>
+        <translation>Google Drive жалғау</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="419"/>
         <source>Синхронизировать сейчас</source>
-        <translation type="unfinished"></translation>
+        <translation>Қазір синхрондау</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="422"/>
         <source>Отключить</source>
-        <translation type="unfinished"></translation>
+        <translation>Ажырату</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="436"/>
         <source>✓ Подключено к Google Drive</source>
-        <translation type="unfinished"></translation>
+        <translation>✓ Google Drive жалғанды</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="437"/>
         <source>Не подключено</source>
-        <translation type="unfinished"></translation>
+        <translation>Жалғанбаған</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="444"/>
         <source>Последняя синхронизация: никогда</source>
-        <translation type="unfinished"></translation>
+        <translation>Соңғы синхрондау: ешқашан</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="446"/>
         <source>Последняя синхронизация: {time}</source>
-        <translation type="unfinished"></translation>
+        <translation>Соңғы синхрондау: {time}</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="461"/>
@@ -272,179 +275,184 @@
         <location filename="../ui/settings.py" line="621"/>
         <location filename="../ui/settings.py" line="626"/>
         <source>Söyle — Cloud Sync</source>
-        <translation type="unfinished"></translation>
+        <translation>Söyle — Cloud Sync</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="463"/>
         <source>Открыл браузер для авторизации в Google. Подтвердите и вернитесь.</source>
-        <translation type="unfinished"></translation>
+        <translation>Google-да авторизациялау үшін браузер ашылды. Растаңыз да оралыңыз.</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="503"/>
         <source>Подключено. Backup начнётся автоматически.</source>
-        <translation type="unfinished"></translation>
+        <translation>Жалғанды. Backup автоматты түрде басталады.</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="510"/>
         <source>Söyle — найден backup</source>
-        <translation type="unfinished"></translation>
+        <translation>Söyle — backup табылды</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="513"/>
         <source>В Google Drive найден backup словаря: {count} терминов (обновлён {date}).
 
 Объединить с локальным словарём сейчас?</source>
-        <translation type="unfinished"></translation>
+        <translation>Google Drive-та сөздік backup табылды: {count} термин ({date} жаңартылған).
+
+Жергілікті сөздікпен қазір біріктіру керек пе?</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="536"/>
         <source>Söyle — настройки с другого устройства</source>
-        <translation type="unfinished"></translation>
+        <translation>Söyle — басқа құрылғыдан баптаулар</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="538"/>
         <source>Найдены настройки с другого устройства. Применить?
 (Локальные значения для микрофона, модели Whisper и темы
 оформления останутся как есть.)</source>
-        <translation type="unfinished"></translation>
+        <translation>Басқа құрылғыдан баптаулар табылды. Қолдану керек пе?
+(Микрофон, Whisper моделі және безендіру тема үшін
+жергілікті мәндер өзгермейді.)</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="562"/>
         <source>Настройки с другого устройства применены. Открой Settings заново, чтобы увидеть значения.</source>
-        <translation type="unfinished"></translation>
+        <translation>Басқа құрылғыдан баптаулар қолданылды. Мәндерді көру үшін Settings-ті қайта ашыңыз.</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="597"/>
         <location filename="../ui/settings.py" line="665"/>
         <location filename="../ui/settings.py" line="899"/>
         <source>Söyle</source>
-        <translation type="unfinished"></translation>
+        <translation>Söyle</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="598"/>
         <source>Sync OK. Локально +{local}, в Drive +{remote}.</source>
-        <translation type="unfinished"></translation>
+        <translation>Sync OK. Жергілікті +{local}, Drive-та +{remote}.</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="622"/>
         <source>Отключено от Google Drive.</source>
-        <translation type="unfinished"></translation>
+        <translation>Google Drive-тан ажыратылды.</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="655"/>
         <source>Скрыть</source>
-        <translation type="unfinished"></translation>
+        <translation>Жасыру</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="667"/>
         <source>Удалить сохранённый API-ключ из Windows Credential Manager?
 Постобработка вернётся к выводу сырых транскриптов, пока не задан новый ключ.</source>
-        <translation type="unfinished"></translation>
+        <translation>Сақталған API-кілтті Windows Credential Manager-ден жою керек пе?
+Жаңа кілт берілгенше кейінгі өңдеу шикі транскриптерді шығаруға оралады.</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="688"/>
         <source>✓ Ключ сохранён: {head}…{tail}  ·  хранится в Windows Credential Manager</source>
-        <translation type="unfinished"></translation>
+        <translation>✓ Кілт сақталды: {head}…{tail}  ·  Windows Credential Manager-де сақтаулы</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="696"/>
         <source>✗ Ключ не задан — постобработка работает в fallback-режиме</source>
-        <translation type="unfinished"></translation>
+        <translation>✗ Кілт берілмеген — кейінгі өңдеу fallback-режимде жұмыс істейді</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="707"/>
         <source>Тема:</source>
-        <translation type="unfinished"></translation>
+        <translation>Тема:</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="710"/>
         <source>Системный</source>
-        <translation type="unfinished"></translation>
+        <translation>Жүйелік</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="716"/>
         <source>Язык интерфейса:</source>
-        <translation type="unfinished"></translation>
+        <translation>Интерфейс тілі:</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="721"/>
         <source>Звуковые сигналы</source>
-        <translation type="unfinished"></translation>
+        <translation>Дыбыстық сигналдар</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="725"/>
         <source>Показать floating-кнопку для диктовки мышью</source>
-        <translation type="unfinished"></translation>
+        <translation>Тышқанмен диктовкалау үшін floating-түймесін көрсету</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="730"/>
         <source>Круглая иконка микрофона в правом нижнем углу. Зажми и говори — альтернатива Right Alt.</source>
-        <translation type="unfinished"></translation>
+        <translation>Оң жақ төменгі бұрыштағы дөңгелек микрофон белгішесі. Басып тұрып сөйлеңіз — Right Alt-қа балама.</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="735"/>
         <source>Запуск при старте Windows</source>
-        <translation type="unfinished"></translation>
+        <translation>Windows іске қосылғанда автоматты жүктеу</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="740"/>
         <source>Буфер обмена (быстрее, совместимо)</source>
-        <translation type="unfinished"></translation>
+        <translation>Алмасу буфері (жылдамырақ, үйлесімді)</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="743"/>
         <source>Эмуляция клавиш (не трогает буфер)</source>
-        <translation type="unfinished"></translation>
+        <translation>Перне эмуляциясы (буферді өзгертпейді)</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="747"/>
         <source>Метод вставки:</source>
-        <translation type="unfinished"></translation>
+        <translation>Кірістіру әдісі:</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="756"/>
         <source>Предупреждение в трее при превышении. 0 = выключено.</source>
-        <translation type="unfinished"></translation>
+        <translation>Асып кеткенде трейде ескерту. 0 = өшірулі.</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="758"/>
         <source>Лимит в месяц:</source>
-        <translation type="unfinished"></translation>
+        <translation>Ай сайынғы лимит:</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="767"/>
         <source>Термины из словаря подсказываются Whisper при распознавании и LLM при полировке (имена, бренды, техническая лексика).</source>
-        <translation type="unfinished"></translation>
+        <translation>Сөздіктегі терминдер тану кезінде Whisper-ге, өңдеу кезінде LLM-ге ұсынылады (есімдер, брендтер, техникалық лексика).</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="779"/>
         <source>Söyle, OpenRouter, Nurgisa ...</source>
-        <translation type="unfinished"></translation>
+        <translation>Söyle, OpenRouter, Nurgisa ...</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="781"/>
         <source>Добавить</source>
-        <translation type="unfinished"></translation>
+        <translation>Қосу</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="788"/>
         <source>Удалить выбранные</source>
-        <translation type="unfinished"></translation>
+        <translation>Таңдалғандарды жою</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="791"/>
         <source>Очистить всё</source>
-        <translation type="unfinished"></translation>
+        <translation>Барлығын тазалау</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="829"/>
         <source>Локальная диктовка через Whisper + OpenRouter для постобработки.</source>
-        <translation type="unfinished"></translation>
+        <translation>Whisper арқылы жергілікті диктовка + кейінгі өңдеу үшін OpenRouter.</translation>
     </message>
     <message>
         <location filename="../ui/settings.py" line="900"/>
         <source>Язык интерфейса изменится после перезапуска.</source>
-        <translation type="unfinished"></translation>
+        <translation>Интерфейс тілі қайта іске қосқаннан кейін өзгереді.</translation>
     </message>
 </context>
 <context>
@@ -465,137 +473,137 @@
         <location filename="../app.py" line="669"/>
         <location filename="../app.py" line="694"/>
         <source>Söyle</source>
-        <translation type="unfinished"></translation>
+        <translation>Söyle</translation>
     </message>
     <message>
         <location filename="../app.py" line="242"/>
         <source>Не удалось зарегистрировать хоткей. Откройте настройки.</source>
-        <translation type="unfinished"></translation>
+        <translation>Хоткейді тіркеу мүмкін болмады. Баптауларды ашыңыз.</translation>
     </message>
     <message>
         <location filename="../app.py" line="322"/>
         <source>Режим LLM: {label}</source>
-        <translation type="unfinished"></translation>
+        <translation>LLM режимі: {label}</translation>
     </message>
     <message>
         <location filename="../app.py" line="339"/>
         <source>Микрофон: {exc}</source>
-        <translation type="unfinished"></translation>
+        <translation>Микрофон: {exc}</translation>
     </message>
     <message>
         <location filename="../app.py" line="370"/>
         <source>Слишком коротко</source>
-        <translation type="unfinished"></translation>
+        <translation>Тым қысқа</translation>
     </message>
     <message>
         <location filename="../app.py" line="398"/>
         <source>Отменено</source>
-        <translation type="unfinished"></translation>
+        <translation>Болдырылмады</translation>
     </message>
     <message>
         <location filename="../app.py" line="421"/>
         <source>Ошибка распознавания</source>
-        <translation type="unfinished"></translation>
+        <translation>Тану қатесі</translation>
     </message>
     <message>
         <location filename="../app.py" line="440"/>
         <source>Ничего не распознано</source>
-        <translation type="unfinished"></translation>
+        <translation>Ештеңе танылмады</translation>
     </message>
     <message>
         <location filename="../app.py" line="457"/>
         <source>Терминал: текст в буфере — вставьте вручную (Ctrl+V)</source>
-        <translation type="unfinished"></translation>
+        <translation>Терминал: мәтін буферде — қолмен кірістіріңіз (Ctrl+V)</translation>
     </message>
     <message>
         <location filename="../app.py" line="481"/>
         <source>Проверьте API-ключ OpenRouter в настройках</source>
-        <translation type="unfinished"></translation>
+        <translation>Баптаулардағы OpenRouter API-кілтін тексеріңіз</translation>
     </message>
     <message>
         <location filename="../app.py" line="485"/>
         <source>OpenRouter: превышен лимит, попробуйте позже</source>
-        <translation type="unfinished"></translation>
+        <translation>OpenRouter: лимит асылды, кейінірек қайталаңыз</translation>
     </message>
     <message>
         <location filename="../app.py" line="488"/>
         <source>Сеть недоступна — вставлен сырой текст</source>
-        <translation type="unfinished"></translation>
+        <translation>Желі қолжетімсіз — шикі мәтін кірістірілді</translation>
     </message>
     <message>
         <location filename="../app.py" line="493"/>
         <source>LLM недоступна — вставлен сырой текст</source>
-        <translation type="unfinished"></translation>
+        <translation>LLM қолжетімсіз — шикі мәтін кірістірілді</translation>
     </message>
     <message>
         <location filename="../app.py" line="513"/>
         <source>Месячный лимит превышен: ${current} из ${limit}</source>
-        <translation type="unfinished"></translation>
+        <translation>Ай сайынғы лимит асылды: ${current} / ${limit}</translation>
     </message>
     <message>
         <location filename="../app.py" line="549"/>
         <source>Добро пожаловать в Söyle</source>
-        <translation type="unfinished"></translation>
+        <translation>Söyle-ге қош келдіңіз</translation>
     </message>
     <message>
         <location filename="../app.py" line="551"/>
         <source>Вставьте OpenRouter API-ключ, чтобы включить полировку. Без ключа можно работать — получите сырую транскрипцию.</source>
-        <translation type="unfinished"></translation>
+        <translation>Өңдеуді қосу үшін OpenRouter API-кілтін кірістіріңіз. Кілтсіз де жұмыс істеуге болады — шикі транскрипция аласыз.</translation>
     </message>
     <message>
         <location filename="../app.py" line="564"/>
         <source>Söyle — Cloud Sync</source>
-        <translation type="unfinished"></translation>
+        <translation>Söyle — Cloud Sync</translation>
     </message>
     <message>
         <location filename="../app.py" line="566"/>
         <source>Подключите Google Drive в Settings → Cloud Sync, чтобы синхронизировать словарь между устройствами и иметь backup.</source>
-        <translation type="unfinished"></translation>
+        <translation>Сөздікті құрылғылар арасында синхрондау және backup үшін Settings → Cloud Sync бөлімінде Google Drive жалғаңыз.</translation>
     </message>
     <message>
         <location filename="../app.py" line="603"/>
         <source>Настройки сохранены</source>
-        <translation type="unfinished"></translation>
+        <translation>Баптаулар сақталды</translation>
     </message>
     <message>
         <location filename="../app.py" line="651"/>
         <source>Google Drive отключён. Подключите заново в Settings.</source>
-        <translation type="unfinished"></translation>
+        <translation>Google Drive ажыратылды. Settings-те қайта жалғаңыз.</translation>
     </message>
     <message>
         <location filename="../app.py" line="657"/>
         <source>Google Drive переполнен. Освободите место или disconnect.</source>
-        <translation type="unfinished"></translation>
+        <translation>Google Drive толып кетті. Орын босатыңыз немесе disconnect жасаңыз.</translation>
     </message>
     <message>
         <location filename="../app.py" line="662"/>
         <source>Söyle — Google заблокировал приложение</source>
-        <translation type="unfinished"></translation>
+        <translation>Söyle — Google қолданбаны бұғаттады</translation>
     </message>
     <message>
         <location filename="../app.py" line="663"/>
         <source>Контакт: andasbek.nurgysa@gmail.com</source>
-        <translation type="unfinished"></translation>
+        <translation>Байланыс: andasbek.nurgysa@gmail.com</translation>
     </message>
     <message>
         <location filename="../app.py" line="670"/>
         <source>Sync: добавлено {n} терминов.</source>
-        <translation type="unfinished"></translation>
+        <translation>Sync: {n} термин қосылды.</translation>
     </message>
     <message>
         <location filename="../app.py" line="694"/>
         <source>Логов пока нет</source>
-        <translation type="unfinished"></translation>
+        <translation>Әзірше логтар жоқ</translation>
     </message>
     <message>
         <location filename="../app.py" line="793"/>
         <source>Söyle — непредвиденная ошибка</source>
-        <translation type="unfinished"></translation>
+        <translation>Söyle — күтпеген қате</translation>
     </message>
     <message>
         <location filename="../app.py" line="798"/>
         <source>Приложите этот файл к багрепорту.</source>
-        <translation type="unfinished"></translation>
+        <translation>Осы файлды баг туралы хабарлама жіберіңіз.</translation>
     </message>
     <message>
         <location filename="../app.py" line="803"/>
@@ -603,7 +611,10 @@
 {path}
 
 </source>
-        <translation type="unfinished"></translation>
+        <translation>Лог сақталды:
+{path}
+
+</translation>
     </message>
 </context>
 <context>
@@ -611,32 +622,32 @@
     <message>
         <location filename="../ui/tray.py" line="37"/>
         <source>Режим</source>
-        <translation type="unfinished"></translation>
+        <translation>Режим</translation>
     </message>
     <message>
         <location filename="../ui/tray.py" line="55"/>
         <source>Расход: $0.0000 (0)</source>
-        <translation type="unfinished"></translation>
+        <translation>Шығын: $0.0000 (0)</translation>
     </message>
     <message>
         <location filename="../ui/tray.py" line="61"/>
         <source>Настройки…</source>
-        <translation type="unfinished"></translation>
+        <translation>Баптаулар…</translation>
     </message>
     <message>
         <location filename="../ui/tray.py" line="63"/>
         <source>Показать логи</source>
-        <translation type="unfinished"></translation>
+        <translation>Логтарды көрсету</translation>
     </message>
     <message>
         <location filename="../ui/tray.py" line="65"/>
         <source>Выход</source>
-        <translation type="unfinished"></translation>
+        <translation>Шығу</translation>
     </message>
     <message>
         <location filename="../ui/tray.py" line="89"/>
         <source>Söyle — режим {label}</source>
-        <translation type="unfinished"></translation>
+        <translation>Söyle — {label} режимі</translation>
     </message>
 </context>
 </TS>

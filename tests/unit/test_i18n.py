@@ -28,3 +28,16 @@ def test_system_unknown_locale_falls_back_to_en() -> None:
 
 def test_supported_languages() -> None:
     assert SUPPORTED == ("ru", "kk", "en")
+
+
+def test_kk_translator_loads_and_translates(qtbot) -> None:
+    from PySide6.QtWidgets import QApplication
+
+    from soyle.ui.i18n import install_translator
+
+    app = QApplication.instance() or QApplication([])
+    translator = install_translator(app, "kk")
+    assert translator is not None
+    # A known key from soyle_kk.ts must come back translated (non-Russian).
+    assert app.translate("SettingsWindow", "Сохранить") == "Сақтау"
+    app.removeTranslator(translator)
