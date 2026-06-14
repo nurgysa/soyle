@@ -2,6 +2,32 @@
 <!DOCTYPE TS>
 <TS version="2.1" language="kk_KZ">
 <context>
+    <name>FloatingButton</name>
+    <message>
+        <location filename="../ui/floating_button.py" line="65"/>
+        <source>Зажмите для записи</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
+    <name>Indicator</name>
+    <message>
+        <location filename="../ui/indicator.py" line="57"/>
+        <source>Запись</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../ui/indicator.py" line="64"/>
+        <source>Распознавание…</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../ui/indicator.py" line="69"/>
+        <source>Обработка…</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
     <name>SettingsWindow</name>
     <message>
         <location filename="../ui/settings.py" line="84"/>
@@ -418,6 +444,180 @@
     <message>
         <location filename="../ui/settings.py" line="900"/>
         <source>Язык интерфейса изменится после перезапуска.</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
+    <name>SoyleApp</name>
+    <message>
+        <location filename="../app.py" line="242"/>
+        <location filename="../app.py" line="322"/>
+        <location filename="../app.py" line="339"/>
+        <location filename="../app.py" line="456"/>
+        <location filename="../app.py" line="480"/>
+        <location filename="../app.py" line="485"/>
+        <location filename="../app.py" line="488"/>
+        <location filename="../app.py" line="493"/>
+        <location filename="../app.py" line="512"/>
+        <location filename="../app.py" line="603"/>
+        <location filename="../app.py" line="650"/>
+        <location filename="../app.py" line="656"/>
+        <location filename="../app.py" line="669"/>
+        <location filename="../app.py" line="694"/>
+        <source>Söyle</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../app.py" line="242"/>
+        <source>Не удалось зарегистрировать хоткей. Откройте настройки.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../app.py" line="322"/>
+        <source>Режим LLM: {label}</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../app.py" line="339"/>
+        <source>Микрофон: {exc}</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../app.py" line="370"/>
+        <source>Слишком коротко</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../app.py" line="398"/>
+        <source>Отменено</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../app.py" line="421"/>
+        <source>Ошибка распознавания</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../app.py" line="440"/>
+        <source>Ничего не распознано</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../app.py" line="457"/>
+        <source>Терминал: текст в буфере — вставьте вручную (Ctrl+V)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../app.py" line="481"/>
+        <source>Проверьте API-ключ OpenRouter в настройках</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../app.py" line="485"/>
+        <source>OpenRouter: превышен лимит, попробуйте позже</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../app.py" line="488"/>
+        <source>Сеть недоступна — вставлен сырой текст</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../app.py" line="493"/>
+        <source>LLM недоступна — вставлен сырой текст</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../app.py" line="513"/>
+        <source>Месячный лимит превышен: ${current} из ${limit}</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../app.py" line="549"/>
+        <source>Добро пожаловать в Söyle</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../app.py" line="551"/>
+        <source>Вставьте OpenRouter API-ключ, чтобы включить полировку. Без ключа можно работать — получите сырую транскрипцию.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../app.py" line="564"/>
+        <source>Söyle — Cloud Sync</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../app.py" line="566"/>
+        <source>Подключите Google Drive в Settings → Cloud Sync, чтобы синхронизировать словарь между устройствами и иметь backup.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../app.py" line="603"/>
+        <source>Настройки сохранены</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../app.py" line="651"/>
+        <source>Google Drive отключён. Подключите заново в Settings.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../app.py" line="657"/>
+        <source>Google Drive переполнен. Освободите место или disconnect.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../app.py" line="662"/>
+        <source>Söyle — Google заблокировал приложение</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../app.py" line="663"/>
+        <source>Контакт: andasbek.nurgysa@gmail.com</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../app.py" line="670"/>
+        <source>Sync: добавлено {n} терминов.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../app.py" line="694"/>
+        <source>Логов пока нет</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
+    <name>TrayIcon</name>
+    <message>
+        <location filename="../ui/tray.py" line="37"/>
+        <source>Режим</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../ui/tray.py" line="55"/>
+        <source>Расход: $0.0000 (0)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../ui/tray.py" line="61"/>
+        <source>Настройки…</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../ui/tray.py" line="63"/>
+        <source>Показать логи</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../ui/tray.py" line="65"/>
+        <source>Выход</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../ui/tray.py" line="89"/>
+        <source>Söyle — режим {label}</source>
         <translation type="unfinished"></translation>
     </message>
 </context>

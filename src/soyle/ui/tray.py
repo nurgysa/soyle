@@ -34,7 +34,7 @@ class TrayIcon(QObject):
         menu = QMenu()
 
         # Mode submenu — exclusive group, one checkmark at a time.
-        mode_menu = menu.addMenu("Режим")
+        mode_menu = menu.addMenu(self.tr("Режим"))
         self._mode_group = QActionGroup(self)
         self._mode_group.setExclusive(True)
         self._mode_actions: dict[str, QAction] = {}
@@ -52,17 +52,17 @@ class TrayIcon(QObject):
         menu.addSeparator()
 
         # Usage summary — non-interactive, shows today's and monthly cost.
-        self._act_usage = QAction("Расход: $0.0000 (0)", self)
+        self._act_usage = QAction(self.tr("Расход: $0.0000 (0)"), self)
         self._act_usage.setEnabled(False)
         menu.addAction(self._act_usage)
 
         menu.addSeparator()
 
-        act_settings = QAction("Настройки…", self)
+        act_settings = QAction(self.tr("Настройки…"), self)
         act_settings.triggered.connect(self.settings_requested.emit)
-        act_logs = QAction("Показать логи", self)
+        act_logs = QAction(self.tr("Показать логи"), self)
         act_logs.triggered.connect(self.logs_requested.emit)
-        act_quit = QAction("Выход", self)
+        act_quit = QAction(self.tr("Выход"), self)
         act_quit.triggered.connect(self.quit_requested.emit)
         menu.addAction(act_settings)
         menu.addAction(act_logs)
@@ -86,7 +86,7 @@ class TrayIcon(QObject):
         for mode_id, act in self._mode_actions.items():
             act.setChecked(mode_id == mode)
         label = dict(self._MODE_LABELS).get(mode, "Polish")
-        self._tray.setToolTip(f"Söyle — режим {label}")
+        self._tray.setToolTip(self.tr("Söyle — режим {label}").format(label=label))
 
     def toast(self, title: str, message: str, level: str = "info") -> None:
         """Show a balloon notification. ``level`` picks the icon shape:

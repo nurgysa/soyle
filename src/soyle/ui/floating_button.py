@@ -62,7 +62,7 @@ class FloatingButton(QWidget):
         # corners outside the circle are click-through-invisible.
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.resize(self.SIZE, self.SIZE)
-        self.setToolTip("Зажмите для записи")
+        self.setToolTip(self.tr("Зажмите для записи"))
         self._position_in_corner()
 
     # ---- Public API ---------------------------------------------------------

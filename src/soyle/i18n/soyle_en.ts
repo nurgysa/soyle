@@ -2,6 +2,32 @@
 <!DOCTYPE TS>
 <TS version="2.1" language="en_US">
 <context>
+    <name>FloatingButton</name>
+    <message>
+        <location filename="../ui/floating_button.py" line="65"/>
+        <source>Зажмите для записи</source>
+        <translation>Hold to record</translation>
+    </message>
+</context>
+<context>
+    <name>Indicator</name>
+    <message>
+        <location filename="../ui/indicator.py" line="57"/>
+        <source>Запись</source>
+        <translation>Recording</translation>
+    </message>
+    <message>
+        <location filename="../ui/indicator.py" line="64"/>
+        <source>Распознавание…</source>
+        <translation>Transcribing…</translation>
+    </message>
+    <message>
+        <location filename="../ui/indicator.py" line="69"/>
+        <source>Обработка…</source>
+        <translation>Polishing…</translation>
+    </message>
+</context>
+<context>
     <name>SettingsWindow</name>
     <message>
         <location filename="../ui/settings.py" line="84"/>
@@ -427,6 +453,180 @@ Post-processing will revert to raw transcripts until a new key is provided.</tra
         <location filename="../ui/settings.py" line="900"/>
         <source>Язык интерфейса изменится после перезапуска.</source>
         <translation>Interface language will change after restart.</translation>
+    </message>
+</context>
+<context>
+    <name>SoyleApp</name>
+    <message>
+        <location filename="../app.py" line="242"/>
+        <location filename="../app.py" line="322"/>
+        <location filename="../app.py" line="339"/>
+        <location filename="../app.py" line="456"/>
+        <location filename="../app.py" line="480"/>
+        <location filename="../app.py" line="485"/>
+        <location filename="../app.py" line="488"/>
+        <location filename="../app.py" line="493"/>
+        <location filename="../app.py" line="512"/>
+        <location filename="../app.py" line="603"/>
+        <location filename="../app.py" line="650"/>
+        <location filename="../app.py" line="656"/>
+        <location filename="../app.py" line="669"/>
+        <location filename="../app.py" line="694"/>
+        <source>Söyle</source>
+        <translation>Söyle</translation>
+    </message>
+    <message>
+        <location filename="../app.py" line="242"/>
+        <source>Не удалось зарегистрировать хоткей. Откройте настройки.</source>
+        <translation>Could not register the hotkey. Open settings.</translation>
+    </message>
+    <message>
+        <location filename="../app.py" line="322"/>
+        <source>Режим LLM: {label}</source>
+        <translation>LLM mode: {label}</translation>
+    </message>
+    <message>
+        <location filename="../app.py" line="339"/>
+        <source>Микрофон: {exc}</source>
+        <translation>Microphone: {exc}</translation>
+    </message>
+    <message>
+        <location filename="../app.py" line="370"/>
+        <source>Слишком коротко</source>
+        <translation>Too short</translation>
+    </message>
+    <message>
+        <location filename="../app.py" line="398"/>
+        <source>Отменено</source>
+        <translation>Cancelled</translation>
+    </message>
+    <message>
+        <location filename="../app.py" line="421"/>
+        <source>Ошибка распознавания</source>
+        <translation>Recognition error</translation>
+    </message>
+    <message>
+        <location filename="../app.py" line="440"/>
+        <source>Ничего не распознано</source>
+        <translation>Nothing recognised</translation>
+    </message>
+    <message>
+        <location filename="../app.py" line="457"/>
+        <source>Терминал: текст в буфере — вставьте вручную (Ctrl+V)</source>
+        <translation>Terminal: text is in the clipboard — paste manually (Ctrl+V)</translation>
+    </message>
+    <message>
+        <location filename="../app.py" line="481"/>
+        <source>Проверьте API-ключ OpenRouter в настройках</source>
+        <translation>Check your OpenRouter API key in settings</translation>
+    </message>
+    <message>
+        <location filename="../app.py" line="485"/>
+        <source>OpenRouter: превышен лимит, попробуйте позже</source>
+        <translation>OpenRouter: rate limit exceeded, try again later</translation>
+    </message>
+    <message>
+        <location filename="../app.py" line="488"/>
+        <source>Сеть недоступна — вставлен сырой текст</source>
+        <translation>Network unavailable — raw text inserted</translation>
+    </message>
+    <message>
+        <location filename="../app.py" line="493"/>
+        <source>LLM недоступна — вставлен сырой текст</source>
+        <translation>LLM unavailable — raw text inserted</translation>
+    </message>
+    <message>
+        <location filename="../app.py" line="513"/>
+        <source>Месячный лимит превышен: ${current} из ${limit}</source>
+        <translation>Monthly limit exceeded: ${current} of ${limit}</translation>
+    </message>
+    <message>
+        <location filename="../app.py" line="549"/>
+        <source>Добро пожаловать в Söyle</source>
+        <translation>Welcome to Söyle</translation>
+    </message>
+    <message>
+        <location filename="../app.py" line="551"/>
+        <source>Вставьте OpenRouter API-ключ, чтобы включить полировку. Без ключа можно работать — получите сырую транскрипцию.</source>
+        <translation>Paste your OpenRouter API key to enable polishing. You can work without a key — you will get raw transcription.</translation>
+    </message>
+    <message>
+        <location filename="../app.py" line="564"/>
+        <source>Söyle — Cloud Sync</source>
+        <translation>Söyle — Cloud Sync</translation>
+    </message>
+    <message>
+        <location filename="../app.py" line="566"/>
+        <source>Подключите Google Drive в Settings → Cloud Sync, чтобы синхронизировать словарь между устройствами и иметь backup.</source>
+        <translation>Connect Google Drive in Settings → Cloud Sync to sync your dictionary across devices and keep a backup.</translation>
+    </message>
+    <message>
+        <location filename="../app.py" line="603"/>
+        <source>Настройки сохранены</source>
+        <translation>Settings saved</translation>
+    </message>
+    <message>
+        <location filename="../app.py" line="651"/>
+        <source>Google Drive отключён. Подключите заново в Settings.</source>
+        <translation>Google Drive disconnected. Reconnect in Settings.</translation>
+    </message>
+    <message>
+        <location filename="../app.py" line="657"/>
+        <source>Google Drive переполнен. Освободите место или disconnect.</source>
+        <translation>Google Drive is full. Free up space or disconnect.</translation>
+    </message>
+    <message>
+        <location filename="../app.py" line="662"/>
+        <source>Söyle — Google заблокировал приложение</source>
+        <translation>Söyle — Google has suspended the app</translation>
+    </message>
+    <message>
+        <location filename="../app.py" line="663"/>
+        <source>Контакт: andasbek.nurgysa@gmail.com</source>
+        <translation>Contact: andasbek.nurgysa@gmail.com</translation>
+    </message>
+    <message>
+        <location filename="../app.py" line="670"/>
+        <source>Sync: добавлено {n} терминов.</source>
+        <translation>Sync: {n} term(s) added.</translation>
+    </message>
+    <message>
+        <location filename="../app.py" line="694"/>
+        <source>Логов пока нет</source>
+        <translation>No logs yet</translation>
+    </message>
+</context>
+<context>
+    <name>TrayIcon</name>
+    <message>
+        <location filename="../ui/tray.py" line="37"/>
+        <source>Режим</source>
+        <translation>Mode</translation>
+    </message>
+    <message>
+        <location filename="../ui/tray.py" line="55"/>
+        <source>Расход: $0.0000 (0)</source>
+        <translation>Usage: $0.0000 (0)</translation>
+    </message>
+    <message>
+        <location filename="../ui/tray.py" line="61"/>
+        <source>Настройки…</source>
+        <translation>Settings…</translation>
+    </message>
+    <message>
+        <location filename="../ui/tray.py" line="63"/>
+        <source>Показать логи</source>
+        <translation>Show logs</translation>
+    </message>
+    <message>
+        <location filename="../ui/tray.py" line="65"/>
+        <source>Выход</source>
+        <translation>Quit</translation>
+    </message>
+    <message>
+        <location filename="../ui/tray.py" line="89"/>
+        <source>Söyle — режим {label}</source>
+        <translation>Söyle — {label} mode</translation>
     </message>
 </context>
 </TS>

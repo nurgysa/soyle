@@ -54,19 +54,19 @@ class Indicator(QWidget):
 
     def show_recording(self) -> None:
         self._stage = "recording"
-        self._text = "Recording"
+        self._text = self.tr("\u0417\u0430\u043f\u0438\u0441\u044c")
         self._follow_timer.start()
         self.show()
         self.update()
 
     def show_transcribing(self) -> None:
         self._stage = "transcribing"
-        self._text = "Transcribing\u2026"
+        self._text = self.tr("\u0420\u0430\u0441\u043f\u043e\u0437\u043d\u0430\u0432\u0430\u043d\u0438\u0435\u2026")
         self.update()
 
     def show_polishing(self) -> None:
         self._stage = "polishing"
-        self._text = "Polishing\u2026"
+        self._text = self.tr("\u041e\u0431\u0440\u0430\u0431\u043e\u0442\u043a\u0430\u2026")
         self.update()
 
     def flash_error(self, message: str, duration_ms: int = 1500) -> None:
