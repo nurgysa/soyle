@@ -14,6 +14,7 @@ STATE_RECORDING = "#e74c3c"
 STATE_TRANSCRIBING = "#f39c12"
 STATE_POLISHING = "#3498db"
 STATE_ERROR = "#95a5a6"
+STATE_DONE = "#1d9e75"  # teal-green success, readable on both themes
 
 
 @dataclass(frozen=True)
