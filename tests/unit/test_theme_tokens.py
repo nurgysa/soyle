@@ -60,3 +60,9 @@ def test_resolve_theme_defaults_dark_without_app(monkeypatch) -> None:
 def test_active_tokens_maps_concrete_themes() -> None:
     assert active_tokens("light") is LIGHT
     assert active_tokens("dark") is DARK
+
+
+def test_state_done_present() -> None:
+    from soyle.ui.theme.tokens import STATE_DONE
+
+    assert STATE_DONE == "#1d9e75"
