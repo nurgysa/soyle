@@ -7,6 +7,7 @@ from PySide6.QtCore import QPoint, QRect, Qt, QTimer
 from PySide6.QtGui import QColor, QCursor, QPainter, QPaintEvent, QPen
 from PySide6.QtWidgets import QWidget
 
+from soyle.core.recorder import normalize_level
 from soyle.ui.theme.tokens import (
     STATE_ERROR,
     STATE_POLISHING,
@@ -41,6 +42,8 @@ class Indicator(QWidget):
 
         self._stage: Stage = "hidden"
         self._text: str = ""
+        self._level: float = 0.0  # EMA-smoothed 0..1 display level
+        self._level_smooth = 0.35  # EMA alpha
 
         self._follow_timer = QTimer(self)
         self._follow_timer.setInterval(50)
@@ -80,6 +83,12 @@ class Indicator(QWidget):
         self._stage = "hidden"
         self._follow_timer.stop()
         self.hide()
+
+    def set_level(self, rms: float) -> None:
+        """Feed a raw RMS sample; stored as an EMA-smoothed 0..1 level."""
+        target = normalize_level(rms)
+        self._level = self._level_smooth * target + (1 - self._level_smooth) * self._level
+        self.update()
 
     # ---- Internals ----
 

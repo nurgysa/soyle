@@ -19,6 +19,7 @@ from PySide6.QtGui import QColor, QGuiApplication, QMouseEvent, QPainter, QPaint
 from PySide6.QtWidgets import QWidget
 
 from soyle.core.bus import Event, EventBus
+from soyle.core.recorder import normalize_level
 from soyle.ui.theme.tokens import STATE_POLISHING, STATE_RECORDING
 
 _RING_COLOR_IDLE = QColor("#7f8c8d")          # gray
@@ -52,6 +53,8 @@ class FloatingButton(QWidget):
         self._recording = False
         self._processing = False
         self._is_pressed = False  # tracks our own press lifecycle for paired release
+        self._level: float = 0.0
+        self._level_smooth = 0.35
 
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
@@ -73,6 +76,12 @@ class FloatingButton(QWidget):
 
     def set_processing(self, on: bool) -> None:
         self._processing = on
+        self.update()
+
+    def set_level(self, rms: float) -> None:
+        """Feed a raw RMS sample; stored as an EMA-smoothed 0..1 level."""
+        target = normalize_level(rms)
+        self._level = self._level_smooth * target + (1 - self._level_smooth) * self._level
         self.update()
 
     # ---- Mouse events -------------------------------------------------------
