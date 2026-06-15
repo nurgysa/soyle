@@ -1,7 +1,6 @@
 """Frameless pill overlay fixed at bottom-center that shows recording state."""
 from __future__ import annotations
 
-import contextlib
 import math
 from collections import deque
 from typing import Literal
@@ -56,6 +55,7 @@ class Indicator(QWidget):
         self._fade = QPropertyAnimation(self, b"windowOpacity", self)
         self._fade.setDuration(120)
         self._fade.setEasingCurve(QEasingCurve.Type.InOutQuad)
+        self._fade_hides: bool = False
         self._breath_phase = 0.0
         self._breath_timer = QTimer(self)
         self._breath_timer.setInterval(33)
@@ -98,8 +98,9 @@ class Indicator(QWidget):
         self._stage = "done"
         self._text = self.tr("Готово")
         self._breath_timer.stop()
+        self.show()
         self.update()
-        self._done_fade_timer.start()
+        self._done_fade_timer.start(600)
 
     def flash_error(self, message: str, duration_ms: int = 1500) -> None:
         self._breath_timer.stop()
@@ -134,10 +135,12 @@ class Indicator(QWidget):
         self._fade.stop()
         self._fade.setStartValue(self.windowOpacity())
         self._fade.setEndValue(end)
-        with contextlib.suppress(RuntimeError, TypeError):
-            self._fade.finished.disconnect()
+        if self._fade_hides:
+            self._fade.finished.disconnect(self.hide)
+            self._fade_hides = False
         if then_hide:
             self._fade.finished.connect(self.hide)
+            self._fade_hides = True
         self._fade.start()
 
     def _position_fixed(self) -> None:
@@ -170,8 +173,9 @@ class Indicator(QWidget):
         if self._stage == "recording":
             self._paint_waveform(p, color)
 
-        p.setPen(QColor("#ffffff"))
-        p.drawText(rect.adjusted(40, 0, -12, 0), Qt.AlignmentFlag.AlignVCenter, self._text)
+        if self._stage != "recording":
+            p.setPen(QColor("#ffffff"))
+            p.drawText(rect.adjusted(40, 0, -12, 0), Qt.AlignmentFlag.AlignVCenter, self._text)
 
     def _paint_glyph(self, p: QPainter, box: QRect, color: QColor) -> None:
         p.save()
