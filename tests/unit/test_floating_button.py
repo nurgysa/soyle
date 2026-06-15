@@ -123,3 +123,14 @@ def test_position_in_corner_pins_to_primary_bottom_right(qtbot) -> None:
     expected_y = avail.bottom() - btn.height() - FloatingButton.MARGIN
     assert geom.x() == expected_x
     assert geom.y() == expected_y
+
+
+def test_set_level_rises_then_decays(qtbot) -> None:
+    btn = FloatingButton(bus=EventBus())
+    qtbot.addWidget(btn)
+    for _ in range(20):
+        btn.set_level(0.15)
+    assert btn._level > 0.8
+    for _ in range(40):
+        btn.set_level(0.0)
+    assert btn._level < 0.1
