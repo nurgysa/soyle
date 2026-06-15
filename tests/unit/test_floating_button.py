@@ -134,3 +134,12 @@ def test_set_level_rises_then_decays(qtbot) -> None:
     for _ in range(40):
         btn.set_level(0.0)
     assert btn._level < 0.1
+
+
+def test_set_stage_updates_field(qtbot) -> None:
+    btn = FloatingButton(bus=EventBus())
+    qtbot.addWidget(btn)
+    btn.set_stage("transcribing")
+    assert btn._stage == "transcribing"
+    btn.set_stage("recording")
+    assert btn._stage == "recording"

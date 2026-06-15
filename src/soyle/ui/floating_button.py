@@ -14,12 +14,13 @@ from __future__ import annotations
 
 import math
 
-from PySide6.QtCore import QPoint, Qt
+from PySide6.QtCore import QPoint, Qt, QTimer
 from PySide6.QtGui import QColor, QGuiApplication, QMouseEvent, QPainter, QPaintEvent, QPen
 from PySide6.QtWidgets import QWidget
 
 from soyle.core.bus import Event, EventBus
 from soyle.core.recorder import normalize_level
+from soyle.ui.indicator import STAGE_COLORS, Stage
 from soyle.ui.theme.tokens import STATE_POLISHING, STATE_RECORDING
 
 _RING_COLOR_IDLE = QColor("#7f8c8d")          # gray
@@ -56,6 +57,12 @@ class FloatingButton(QWidget):
         self._level: float = 0.0
         self._level_smooth = 0.35
 
+        self._stage: Stage = "hidden"
+        self._breath_phase = 0.0
+        self._anim_timer = QTimer(self)
+        self._anim_timer.setInterval(33)
+        self._anim_timer.timeout.connect(self._tick_anim)
+
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.WindowStaysOnTopHint
@@ -70,13 +77,28 @@ class FloatingButton(QWidget):
 
     # ---- Public API ---------------------------------------------------------
 
+    def set_stage(self, stage: Stage) -> None:
+        self._stage = stage
+        if stage in ("recording", "transcribing", "polishing"):
+            self._anim_timer.start()
+        else:
+            self._anim_timer.stop()
+        self.update()
+
+    def _tick_anim(self) -> None:
+        self._breath_phase += 0.12
+        self.update()
+
     def set_recording(self, on: bool) -> None:
         self._recording = on
-        self.update()
+        self.set_stage("recording" if on else "hidden")
 
     def set_processing(self, on: bool) -> None:
         self._processing = on
-        self.update()
+        if on:
+            self.set_stage("polishing")
+        elif not self._recording:
+            self.set_stage("hidden")
 
     def set_level(self, rms: float) -> None:
         """Feed a raw RMS sample; stored as an EMA-smoothed 0..1 level."""
@@ -126,6 +148,27 @@ class FloatingButton(QWidget):
         p.drawEllipse(
             inset, inset, self.width() - 2 * inset, self.height() - 2 * inset
         )
+
+        # Stage-aware overlays (level pulse for recording; breathing ring for processing)
+        stage_color = STAGE_COLORS.get(self._stage)
+        if self._stage == "recording" and stage_color is not None:
+            p.save()
+            p.setPen(Qt.PenStyle.NoPen)
+            pulse = QColor(stage_color)
+            pulse.setAlpha(int(90 * self._level))
+            grow = int(6 * self._level)
+            p.setBrush(pulse)
+            p.drawEllipse(self.rect().center(), self.SIZE // 2 - 2 + grow, self.SIZE // 2 - 2 + grow)
+            p.restore()
+        elif self._stage in ("transcribing", "polishing") and stage_color is not None:
+            opacity = 0.4 + 0.6 * (0.5 + 0.5 * math.sin(self._breath_phase))
+            p.save()
+            p.setOpacity(opacity)
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.setPen(QPen(stage_color, self.RING_WIDTH))
+            half = self.RING_WIDTH / 2
+            p.drawEllipse(int(half), int(half), int(self.width() - self.RING_WIDTH), int(self.height() - self.RING_WIDTH))
+            p.restore()
 
         # State ring
         p.setBrush(Qt.BrushStyle.NoBrush)
