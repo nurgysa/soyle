@@ -1,33 +1,37 @@
-"""Frameless pill overlay that follows the cursor and shows recording state."""
+"""Frameless pill overlay fixed at bottom-center that shows recording state."""
 from __future__ import annotations
 
 from typing import Literal
 
-from PySide6.QtCore import QPoint, QRect, Qt, QTimer
-from PySide6.QtGui import QColor, QCursor, QPainter, QPaintEvent, QPen
+from PySide6.QtCore import QRect, Qt, QTimer
+from PySide6.QtGui import QColor, QGuiApplication, QPainter, QPaintEvent, QPen
 from PySide6.QtWidgets import QWidget
 
 from soyle.core.recorder import normalize_level
 from soyle.ui.theme.tokens import (
+    STATE_DONE,
     STATE_ERROR,
     STATE_POLISHING,
     STATE_RECORDING,
     STATE_TRANSCRIBING,
 )
 
-Stage = Literal["recording", "transcribing", "polishing", "hidden", "error"]
+Stage = Literal["recording", "transcribing", "polishing", "done", "hidden", "error"]
 
 STAGE_COLORS: dict[Stage, QColor] = {
     "recording": QColor(STATE_RECORDING),
     "transcribing": QColor(STATE_TRANSCRIBING),
     "polishing": QColor(STATE_POLISHING),
+    "done": QColor(STATE_DONE),
     "error": QColor(STATE_ERROR),
     "hidden": QColor("#000000"),
 }
 
 
 class Indicator(QWidget):
-    """Small frameless always-on-top pill widget."""
+    """Small frameless always-on-top pill widget fixed at bottom-center."""
+
+    MARGIN_BOTTOM = 120
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -45,10 +49,6 @@ class Indicator(QWidget):
         self._level: float = 0.0  # EMA-smoothed 0..1 display level
         self._level_smooth = 0.35  # EMA alpha
 
-        self._follow_timer = QTimer(self)
-        self._follow_timer.setInterval(50)
-        self._follow_timer.timeout.connect(self._follow_cursor)
-
         self._auto_hide_timer = QTimer(self)
         self._auto_hide_timer.setSingleShot(True)
         self._auto_hide_timer.timeout.connect(self.hide_indicator)
@@ -57,20 +57,27 @@ class Indicator(QWidget):
 
     def show_recording(self) -> None:
         self._stage = "recording"
-        self._text = self.tr("\u0417\u0430\u043f\u0438\u0441\u044c")
-        self._follow_timer.start()
+        self._text = self.tr("Запись")
+        self._position_fixed()
         self.show()
         self.update()
 
     def show_transcribing(self) -> None:
         self._stage = "transcribing"
-        self._text = self.tr("\u0420\u0430\u0441\u043f\u043e\u0437\u043d\u0430\u0432\u0430\u043d\u0438\u0435\u2026")
+        self._text = self.tr("Распознавание…")
         self.update()
 
     def show_polishing(self) -> None:
         self._stage = "polishing"
-        self._text = self.tr("\u041e\u0431\u0440\u0430\u0431\u043e\u0442\u043a\u0430\u2026")
+        self._text = self.tr("Обработка…")
         self.update()
+
+    def show_done(self) -> None:
+        self._stage = "done"
+        self._text = self.tr("Готово")
+        self.show()
+        self.update()
+        self._auto_hide_timer.start(600)
 
     def flash_error(self, message: str, duration_ms: int = 1500) -> None:
         self._stage = "error"
@@ -81,7 +88,6 @@ class Indicator(QWidget):
 
     def hide_indicator(self) -> None:
         self._stage = "hidden"
-        self._follow_timer.stop()
         self.hide()
 
     def set_level(self, rms: float) -> None:
@@ -92,9 +98,14 @@ class Indicator(QWidget):
 
     # ---- Internals ----
 
-    def _follow_cursor(self) -> None:
-        pos = QCursor.pos() + QPoint(16, 16)
-        self.move(pos)
+    def _position_fixed(self) -> None:
+        screen = QGuiApplication.primaryScreen()
+        if screen is None:
+            return
+        avail = screen.availableGeometry()
+        x = avail.center().x() - self.width() // 2
+        y = avail.bottom() - self.height() - self.MARGIN_BOTTOM
+        self.move(x, y)
 
     def paintEvent(self, _ev: QPaintEvent | None) -> None:  # noqa: N802
         p = QPainter(self)
