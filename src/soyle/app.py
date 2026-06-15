@@ -141,6 +141,11 @@ class SoyleApp(QObject):
         # the same EventBus, so state-machine guards in _on_hotkey_pressed
         # de-dup with HotkeyBox. Hidden if user disabled in Settings.
         self._floating_button = FloatingButton(bus=self._bus)
+        # Polls the recorder's live level (~25 fps) while recording and feeds
+        # both the HUD and the floating button. Started/stopped with recording.
+        self._level_timer = QTimer(self)
+        self._level_timer.setInterval(40)
+        self._level_timer.timeout.connect(self._poll_mic_level)
         self._settings_window: SettingsWindow | None = None
 
         self._recorder = Recorder(bus=self._bus)
@@ -285,14 +290,14 @@ class SoyleApp(QObject):
         self._bus.subscribe(Event.HOTKEY_PRESSED, self._on_hotkey_pressed)
         self._bus.subscribe(Event.HOTKEY_RELEASED, self._on_hotkey_released)
         self._bus.subscribe(Event.CANCEL_REQUESTED, self._on_cancel_requested)
-        # Floating-button visual state mirrors the state machine.
+        # Floating-button visual state + level polling mirrors the state machine.
         self._bus.subscribe(
             Event.RECORDING_STARTED,
-            lambda _payload: self._floating_button.set_recording(True),
+            lambda _payload: self._on_recording_started_ui(),
         )
         self._bus.subscribe(
             Event.RECORDING_STOPPED,
-            lambda _payload: self._floating_button.set_recording(False),
+            lambda _payload: self._on_recording_stopped_ui(),
         )
         self._bus.subscribe(
             Event.INJECTING,
@@ -320,6 +325,24 @@ class SoyleApp(QObject):
         self._tray.set_mode(mode)
         label = "Rewrite" if mode == "rewrite" else "Polish"
         self._tray.toast(self.tr("Söyle"), self.tr("Режим LLM: {label}").format(label=label))
+
+    # ---- Mic-level polling ----
+
+    def _poll_mic_level(self) -> None:
+        level = self._recorder.current_level()
+        self._indicator.set_level(level)
+        self._floating_button.set_level(level)
+
+    def _on_recording_started_ui(self) -> None:
+        self._floating_button.set_recording(True)
+        self._level_timer.start()
+
+    def _on_recording_stopped_ui(self) -> None:
+        self._floating_button.set_recording(False)
+        self._level_timer.stop()
+        # Settle bars to zero so the next recording starts clean.
+        self._indicator.set_level(0.0)
+        self._floating_button.set_level(0.0)
 
     # ---- Hotkey handlers ----
 
