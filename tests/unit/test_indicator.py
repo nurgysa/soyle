@@ -67,3 +67,19 @@ def test_fixed_position_is_bottom_center(qtbot) -> None:
     geom = ind.geometry()
     assert abs(geom.center().x() - avail.center().x()) <= 2
     assert geom.bottom() <= avail.bottom() - 120 + ind.height()
+
+
+def test_level_feeds_ring_buffer(qtbot) -> None:
+    ind = Indicator()
+    qtbot.addWidget(ind)
+    for _ in range(5):
+        ind.set_level(0.15)
+    assert len(ind._levels) > 0
+    assert max(ind._levels) > 0.0
+
+
+def test_show_recording_runs_fade_animation(qtbot) -> None:
+    ind = Indicator()
+    qtbot.addWidget(ind)
+    ind.show_recording()
+    assert ind._fade.propertyName() == b"windowOpacity"
