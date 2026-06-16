@@ -21,7 +21,7 @@ log = structlog.get_logger()
 MAX_ENTRIES = 100
 
 
-@dataclass
+@dataclass(frozen=True)
 class HistoryEntry:
     timestamp: str       # ISO 8601 UTC, microsecond precision; unique delete key
     processed_text: str
@@ -79,8 +79,10 @@ class HistoryStore:
 
     def delete(self, timestamp: str) -> None:
         """Remove the entry whose timestamp matches (no-op if absent)."""
+        before = len(self._entries)
         self._entries = [e for e in self._entries if e.timestamp != timestamp]
-        self._save()
+        if len(self._entries) != before:
+            self._save()
 
     def clear(self) -> None:
         """Wipe all entries."""

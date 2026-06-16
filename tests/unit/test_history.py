@@ -132,3 +132,31 @@ def test_load_caps_oversized_file(tmp_path: Path) -> None:
     ]
     path.write_text(json.dumps({"version": 1, "entries": rows}), encoding="utf-8")
     assert len(HistoryStore(path).all()) == MAX_ENTRIES
+
+
+# ---------------------------------------------------------------------------
+# Review follow-ups (code-quality minors)
+# ---------------------------------------------------------------------------
+
+def test_empty_store_returns_empty_list(tmp_path: Path) -> None:
+    # Exercises the missing-file branch of _load (distinct from clear()).
+    store = HistoryStore(tmp_path / "history.json")
+    assert store.all() == []
+
+
+def test_unicode_survives_round_trip(tmp_path: Path) -> None:
+    # The app dictates Cyrillic/Kazakh — prove ensure_ascii=False round-trips.
+    path = tmp_path / "history.json"
+    fixed = datetime(2026, 6, 16, 10, 0, 1, tzinfo=UTC)
+    entry = build_entry("обработанный текст", "сырой текст 🎙", "ru", "polish", False, now=fixed)
+    HistoryStore(path).append(entry)
+    reopened = HistoryStore(path).all()
+    assert reopened[0].processed_text == "обработанный текст"
+    assert reopened[0].raw_text == "сырой текст 🎙"
+
+
+def test_delete_nonexistent_timestamp_is_noop(tmp_path: Path) -> None:
+    store = HistoryStore(tmp_path / "history.json")
+    store.append(_entry(1))
+    store.delete("does-not-exist")
+    assert len(store.all()) == 1
