@@ -358,6 +358,7 @@ class SoyleApp(QObject):
             self._state.transition(State.RECORDING)
             self._tray.set_recording(True)
             self._indicator.show_recording()
+            self._floating_button.set_stage("recording")
         except AudioDeviceError as exc:
             self._tray.toast(self.tr("Söyle"), self.tr("Микрофон: {exc}").format(exc=exc))
             self._state.reset_to_idle()
@@ -372,6 +373,7 @@ class SoyleApp(QObject):
             self._state.reset_to_idle()
             self._tray.set_recording(False)
             self._indicator.hide_indicator()
+            self._floating_button.set_stage("hidden")
             return
 
         self._tray.set_recording(False)
@@ -391,11 +393,13 @@ class SoyleApp(QObject):
 
         if trimmed_duration_ms < self._cfg.audio.vad_min_speech_ms:
             self._indicator.flash_error(self.tr("Слишком коротко"))
+            self._floating_button.set_stage("hidden")
             self._state.reset_to_idle()
             return
 
         self._state.transition(State.TRANSCRIBING)
         self._indicator.show_transcribing()
+        self._floating_button.set_stage("transcribing")
 
         job = _InferenceJob(
             transcriber=self._transcriber,
@@ -419,6 +423,7 @@ class SoyleApp(QObject):
         self._state.reset_to_idle()
         self._tray.set_recording(False)
         self._indicator.flash_error(self.tr("Отменено"))
+        self._floating_button.set_stage("hidden")
         log.info("recording_cancelled")
 
     # ---- Inference callbacks (always invoked from worker thread) ----
@@ -442,6 +447,7 @@ class SoyleApp(QObject):
 
     def _handle_inference_error(self, _message: str) -> None:
         self._indicator.flash_error(self.tr("Ошибка распознавания"))
+        self._floating_button.set_stage("hidden")
         self._state.reset_to_idle()
 
     def _finish_inference(
@@ -461,11 +467,13 @@ class SoyleApp(QObject):
         )
         if not text.strip():
             self._indicator.flash_error(self.tr("Ничего не распознано"))
+            self._floating_button.set_stage("hidden")
             self._state.reset_to_idle()
             return
 
         self._state.transition(State.POLISHING)
         self._indicator.show_polishing()
+        self._floating_button.set_stage("polishing")
         self._state.transition(State.INJECTING)
         inject_result = self._injector.inject(text, target_hwnd=self._target_hwnd)
 
@@ -545,7 +553,8 @@ class SoyleApp(QObject):
             )
 
     def _after_inject(self) -> None:
-        self._indicator.hide_indicator()
+        self._indicator.show_done()
+        self._floating_button.set_stage("hidden")
         self._state.reset_to_idle()
 
     # ---- Settings ----
