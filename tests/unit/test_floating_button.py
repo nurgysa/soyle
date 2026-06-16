@@ -134,3 +134,22 @@ def test_set_level_rises_then_decays(qtbot) -> None:
     for _ in range(40):
         btn.set_level(0.0)
     assert btn._level < 0.1
+
+
+def test_set_stage_updates_field(qtbot) -> None:
+    from soyle.core.bus import EventBus
+
+    btn = FloatingButton(bus=EventBus())
+    qtbot.addWidget(btn)
+
+    btn.set_stage("transcribing")
+    assert btn._stage == "transcribing"
+    assert btn._anim_timer.isActive()  # processing stages breathe
+
+    btn.set_stage("recording")
+    assert btn._stage == "recording"
+    assert btn._anim_timer.isActive()  # recording pulses
+
+    btn.set_stage("hidden")
+    assert btn._stage == "hidden"
+    assert not btn._anim_timer.isActive()  # idle: no animation
