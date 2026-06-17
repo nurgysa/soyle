@@ -429,3 +429,15 @@ def test_ui_language_accepts_supported() -> None:
 def test_ui_language_rejects_unknown() -> None:
     with pytest.raises(ValueError):
         UIConfig(language="fr")
+
+
+def test_history_enabled_defaults_true_and_round_trips(tmp_path: Path) -> None:
+    from soyle.core.config import ConfigStore
+
+    store = ConfigStore(config_path=tmp_path / "config.toml")
+    cfg = store.load()
+    assert cfg.ui.history_enabled is True
+
+    cfg.ui.history_enabled = False
+    store.save(cfg)
+    assert store.load().ui.history_enabled is False

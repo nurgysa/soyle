@@ -102,6 +102,9 @@ class UIConfig(BaseModel):
     # Mouse press-and-hold = PTT alternative to Right Alt. Phase B will
     # repurpose this widget to anchor near focused text fields (Wispr-style).
     show_floating_button: bool = True
+    # Local dictation history (Stage 2). On by default; the Settings toggle
+    # turns it off and clears the stored file. Stored locally; NOT synced.
+    history_enabled: bool = True
 
 
 class BehaviorConfig(BaseModel):
