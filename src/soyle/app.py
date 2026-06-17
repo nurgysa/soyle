@@ -23,6 +23,7 @@ from soyle.core.cloud_sync import CloudSync, SyncOutcome, SyncResult
 from soyle.core.config import ConfigStore, default_config_path
 from soyle.core.dictionary import DictionaryStore
 from soyle.core.errors import AudioDeviceError
+from soyle.core.history import HistoryStore, build_entry, should_record
 from soyle.core.hotkey import HotkeyBox
 from soyle.core.injector import Injector
 from soyle.core.kz_aware_transcriber import KzAwareTranscriber
@@ -64,9 +65,9 @@ class _InferenceJob(QRunnable):
         postprocess: PostProcess,
         audio: np.ndarray,
         sample_rate: int,
-        # on_done callback receives (final_text, fallback_used, language,
+        # on_done receives (final_text, raw_text, fallback_used, language,
         # reason_or_polish_outcome, cost_usd). See `run()` for the call sites.
-        on_done: Callable[[str, bool, str, str, float], None],
+        on_done: Callable[[str, str, bool, str, str, float], None],
         on_error: Callable[[Exception], None],
     ) -> None:
         super().__init__()
@@ -82,13 +83,17 @@ class _InferenceJob(QRunnable):
             transcript = self._transcriber.transcribe(self._audio, sample_rate=self._sr)
             if not transcript.raw_text:
                 # No speech — report empty, no polish happened.
-                self._on_done(transcript.raw_text, True, transcript.language, "empty_input", 0.0)
+                self._on_done(
+                    transcript.raw_text, transcript.raw_text, True,
+                    transcript.language, "empty_input", 0.0,
+                )
                 return
             polish = asyncio.run(
                 self._postprocess.polish(transcript.raw_text, language=transcript.language)
             )
             self._on_done(
                 polish.text,
+                transcript.raw_text,
                 polish.fallback,
                 transcript.language,
                 polish.reason,
@@ -103,7 +108,8 @@ class SoyleApp(QObject):
 
     # Cross-thread signals: worker QRunnables cannot reliably use QTimer.singleShot
     # because they have no Qt event loop. Signals use QueuedConnection automatically.
-    _inference_done = Signal(str, bool, str, str, float)  # text, fallback, lang, reason, cost
+    # text, raw_text, fallback, lang, reason, cost
+    _inference_done = Signal(str, str, bool, str, str, float)
     _inference_error = Signal(str)  # error message
     _sync_done = Signal(object)  # cloud_sync.SyncResult
     _kz_toast = Signal(str)  # KZ model load-failure message (from worker thread)
@@ -126,6 +132,9 @@ class SoyleApp(QObject):
             self._qapp, resolve_language(self._cfg.ui.language)
         )
         self._usage = UsageTracker(default_config_path().parent / "usage.json")
+        self._history_store = HistoryStore(
+            default_config_path().parent / "history.json"
+        )
         # One-shot guard: show the "bad API key" toast at most once per reload,
         # to avoid spamming the user on every hotkey release while their key
         # is invalid. Reset by _reload_config.
@@ -429,7 +438,8 @@ class SoyleApp(QObject):
     # ---- Inference callbacks (always invoked from worker thread) ----
 
     def _on_inference_done(
-        self, text: str, fallback: bool, language: str, reason: str, cost_usd: float
+        self, text: str, raw_text: str, fallback: bool, language: str,
+        reason: str, cost_usd: float,
     ) -> None:
         log.info(
             "on_inference_done",
@@ -439,7 +449,7 @@ class SoyleApp(QObject):
             cost_usd=round(cost_usd, 6),
         )
         # Signal is thread-safe and uses QueuedConnection → handler runs on main thread.
-        self._inference_done.emit(text, fallback, language, reason, cost_usd)
+        self._inference_done.emit(text, raw_text, fallback, language, reason, cost_usd)
 
     def _on_inference_error(self, exc: Exception) -> None:
         log.error("inference_failed", error=str(exc))
@@ -453,8 +463,9 @@ class SoyleApp(QObject):
     def _finish_inference(
         self,
         text: str,
+        raw_text: str,
         fallback: bool,
-        _language: str,
+        language: str,
         reason: str,
         cost_usd: float,
     ) -> None:
@@ -489,6 +500,17 @@ class SoyleApp(QObject):
             )
         elif fallback:
             self._show_fallback_toast(reason)
+
+        if should_record(text, enabled=self._cfg.ui.history_enabled):
+            self._history_store.append(
+                build_entry(
+                    processed_text=text,
+                    raw_text=raw_text,
+                    language=language,
+                    mode=self._cfg.postprocess.mode,
+                    fallback=fallback,
+                )
+            )
 
         QTimer.singleShot(200, self._after_inject)
 
