@@ -501,6 +501,9 @@ class SoyleApp(QObject):
         elif fallback:
             self._show_fallback_toast(reason)
 
+        # should_record re-checks text.strip() as defense-in-depth; the guard
+        # above already returned on empty text, so here it effectively gates on
+        # the history_enabled config.
         if should_record(text, enabled=self._cfg.ui.history_enabled):
             self._history_store.append(
                 build_entry(

@@ -432,8 +432,6 @@ def test_ui_language_rejects_unknown() -> None:
 
 
 def test_history_enabled_defaults_true_and_round_trips(tmp_path: Path) -> None:
-    from soyle.core.config import ConfigStore
-
     store = ConfigStore(config_path=tmp_path / "config.toml")
     cfg = store.load()
     assert cfg.ui.history_enabled is True

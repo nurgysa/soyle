@@ -12,8 +12,20 @@ from soyle.core.history import HistoryStore, build_entry, should_record
 
 
 def _record(store: HistoryStore, *, text: str, raw: str, enabled: bool) -> None:
+    # mode is hardcoded "polish"; the app sources it from cfg.postprocess.mode
+    # at call time, but the gate logic is independent of the mode value.
+    # Keyword args mirror the app's build_entry call so a param-order change
+    # cannot silently build the wrong entry here.
     if should_record(text, enabled=enabled):
-        store.append(build_entry(text, raw, "ru", "polish", False))
+        store.append(
+            build_entry(
+                processed_text=text,
+                raw_text=raw,
+                language="ru",
+                mode="polish",
+                fallback=False,
+            )
+        )
 
 
 def test_records_when_enabled_and_nonempty(tmp_path: Path) -> None:
