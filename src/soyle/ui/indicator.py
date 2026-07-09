@@ -175,7 +175,12 @@ class Indicator(QWidget):
 
         if self._stage != "recording":
             p.setPen(QColor("#ffffff"))
-            p.drawText(rect.adjusted(40, 0, -12, 0), Qt.AlignmentFlag.AlignVCenter, self._text)
+            text_rect = rect.adjusted(40, 0, -12, 0)
+            metrics = p.fontMetrics()
+            elided = metrics.elidedText(
+                self._text, Qt.TextElideMode.ElideRight, text_rect.width()
+            )
+            p.drawText(text_rect, Qt.AlignmentFlag.AlignVCenter, elided)
 
     def _paint_glyph(self, p: QPainter, box: QRect, color: QColor) -> None:
         p.save()

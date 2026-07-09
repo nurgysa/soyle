@@ -46,15 +46,15 @@ def test_resolve_theme_system_returns_concrete() -> None:
     assert resolve_theme("nonsense") in ("light", "dark")
 
 
-def test_resolve_theme_defaults_dark_without_app(monkeypatch) -> None:
-    # No running QApplication → OS scheme can't be queried → safe dark
-    # default. Force the no-app branch deterministically; the full suite may
-    # leave a real QApplication instance around, so we can't rely on it.
+def test_resolve_theme_defaults_light_without_app(monkeypatch) -> None:
+    # No running QApplication → OS scheme can't be queried → safe LIGHT
+    # default (fewer users surprised by an unexpected dark UI on a light-OS
+    # machine). Force the no-app branch deterministically.
     from PySide6.QtGui import QGuiApplication
 
     monkeypatch.setattr(QGuiApplication, "instance", staticmethod(lambda: None))
-    assert resolve_theme("system") == "dark"
-    assert resolve_theme("nonsense") == "dark"
+    assert resolve_theme("system") == "light"
+    assert resolve_theme("nonsense") == "light"
 
 
 def test_active_tokens_maps_concrete_themes() -> None:

@@ -115,7 +115,10 @@ def resolve_theme(theme: str) -> str:
             return "dark"
         if scheme == Qt.ColorScheme.Light:
             return "light"
-    return "dark"
+    # Unknown scheme (no running app, or OS reports "unknown"): default to
+    # light — safer than dark, fewer users are surprised by an unexpected
+    # dark UI on a light-OS machine.
+    return "light"
 
 
 def active_tokens(theme: str) -> Tokens:

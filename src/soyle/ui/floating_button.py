@@ -74,6 +74,13 @@ class FloatingButton(QWidget):
         self.resize(self.SIZE, self.SIZE)
         self.setToolTip(self.tr("Зажмите для записи"))
         self._position_in_corner()
+        # Phase B: re-pin when the screen set changes (multi-monitor setups,
+        # laptop+dock). QGuiApplication.screenAdded/screenRemoved fire on
+        # monitor add/remove/swap; we re-pin to the (possibly new) primary.
+        gui = QGuiApplication.instance()
+        if isinstance(gui, QGuiApplication):
+            gui.screenAdded.connect(lambda _s=None: self._position_in_corner())
+            gui.screenRemoved.connect(lambda _s=None: self._position_in_corner())
 
     # ---- Public API ---------------------------------------------------------
 

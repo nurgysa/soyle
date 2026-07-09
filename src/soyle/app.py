@@ -274,6 +274,16 @@ class SoyleApp(QObject):
         # Warm up Whisper in background so first transcription is fast
         QTimer.singleShot(250, self._warm_up_transcriber)
 
+        # Pre-flight: if an API key is missing (not first run, so the wizard
+        # already ran), warn once at startup so the user isn't surprised by a
+        # silent inference error on their first dictation.
+        if not self._store.is_first_run and not self._store.get_api_key():
+            QTimer.singleShot(900, lambda: self._tray.toast(
+                self.tr("Söyle"),
+                self.tr("API-ключ OpenRouter не задан — LLM-полировка отключена. Откройте настройки."),
+                "warning",
+            ))
+
         # First-run wizard: if config.toml didn't exist until now, pull
         # the user into Settings and focus the API-key field. Delayed so
         # the tray icon appears first and the dialog is less jarring.
