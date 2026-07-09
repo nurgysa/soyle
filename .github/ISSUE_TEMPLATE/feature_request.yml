@@ -1,0 +1,40 @@
+name: Feature request
+description: Suggest an improvement or a new capability for Söyle
+title: "[Feature] "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or context
+      description: What limitation are you hitting? Why would this help?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What should change? Be concrete (UI, behavior, API).
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Any other approaches you thought about?
+    validations:
+      required: false
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Area
+      options:
+        - Transcription (Whisper)
+        - LLM polish / rewrite
+        - UI / localization
+        - History / storage
+        - Cloud sync
+        - Installer / signing
+        - Other
+    validations:
+      required: false

@@ -151,8 +151,13 @@ The workflow finishes in ~6–10 minutes; the new `.exe` appears under
 
 ### Code signing
 
-Current installers are **unsigned** — Windows SmartScreen warns on
-first download, users click *More info → Run anyway*.
+Current installers are **unsigned** — the `release.yml` workflow is already
+wired for [SignPath Foundation](https://signpath.org/apply) (free for
+open-source, see [docs/signing.md](docs/signing.md)), but signing is **pending
+SignPath approval**, so for now Windows SmartScreen warns on first download and
+users click *More info → Run anyway*. Once the SignPath org/policy and the four
+repo secrets are in place and `SIGNING_ENABLED=true`, the same tag produces a
+signed `.exe`.
 
 To remove the warning for free (open-source projects qualify), apply
 to [SignPath Foundation](https://signpath.org/apply) and follow the
