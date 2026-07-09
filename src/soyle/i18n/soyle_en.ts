@@ -50,6 +50,21 @@
         <translation>Dictionary</translation>
     </message>
     <message>
+        <location filename="../ui/settings.py" line="93"/>
+        <source>Whisper</source>
+        <translation>Whisper</translation>
+    </message>
+    <message>
+        <location filename="../ui/settings.py" line="94"/>
+        <source>LLM</source>
+        <translation>LLM</translation>
+    </message>
+    <message>
+        <location filename="../ui/settings.py" line="99"/>
+        <source>Cloud Sync</source>
+        <translation>Cloud Sync</translation>
+    </message>
+    <message>
         <location filename="../ui/settings.py" line="100"/>
         <source>Внешний вид</source>
         <translation>Appearance</translation>

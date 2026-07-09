@@ -90,13 +90,13 @@ class SettingsWindow(QMainWindow):
         self._tabs = QTabWidget()
         self._tabs.addTab(self._build_hotkey_tab(), self.tr("Хоткей"))
         self._tabs.addTab(self._build_audio_tab(), self.tr("Аудио"))
-        self._tabs.addTab(self._build_whisper_tab(), "Whisper")
-        self._tabs.addTab(self._build_postprocess_tab(), "LLM")
+        self._tabs.addTab(self._build_whisper_tab(), self.tr("Whisper"))
+        self._tabs.addTab(self._build_postprocess_tab(), self.tr("LLM"))
         self._tabs.addTab(self._build_dictionary_tab(), self.tr("Словарь"))
         # Cloud Sync sits right after Словарь — it backs up dictionary.toml,
         # so users browsing dictionary settings stay in context.
         if self._cloud_sync is not None:
-            self._tabs.addTab(self._build_cloud_sync_tab(), "Cloud Sync")
+            self._tabs.addTab(self._build_cloud_sync_tab(), self.tr("Cloud Sync"))
         self._tabs.addTab(self._build_ui_tab(), self.tr("Внешний вид"))
         self._tabs.addTab(self._build_about_tab(), self.tr("О программе"))
         root.addWidget(self._tabs)
