@@ -5,30 +5,12 @@ All notable changes to Söyle are recorded here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.1.1] — 2026-07-10
-
-### Changed
-- Signed Windows installer via SignPath Foundation (Authenticode). No more
-  "Unknown publisher" / SmartScreen warning on clean machines.
-- `resolve_theme("system")` falls back to **light** (not dark) when the
-  OS color scheme is unknown.
-
-### Fixed
-- UI i18n: Settings tab labels (Whisper / LLM / Cloud Sync) now translate
-  in Kazakh and English (were hardcoded Russian).
-- Dark-theme accent button text contrast: `#0c0c1a` → `#ffffff`
-  (was ~3.5:1, below WCAG AA; now ~9:1).
-- Indicator: long status text (e.g. Kazakh) is elided instead of overflowing.
-- Floating button: re-pins to the primary screen on monitor add/remove
-  (multi-monitor / laptop+dock).
-- Startup pre-flight toast when the OpenRouter API key is missing (non-first
-  run) so LLM-polish outage isn't a silent surprise.
-
 ## [Unreleased]
 
 ### Planned
 
 - OpenRouter login via OAuth 2.0 PKCE — no more manual API key copy-paste.
+- UI localization scaffold (Kazakh / Russian / English).
 - Cross-device sync via Google Drive AppDataFolder.
 
 ## [1.1.0] — 2026-07-10
