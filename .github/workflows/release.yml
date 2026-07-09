@@ -6,10 +6,12 @@ name: release
 # single file from github.com/<repo>/releases/latest — no git, no uv, no
 # command line.
 #
-# Code signing: Installers produced by this workflow are UNSIGNED. When
-# you obtain a SignPath Foundation account (free for open-source, see
-# docs/signing.md), extend this workflow following the recipe in that
-# doc — the changes are additive and documented step-by-step.
+# Code signing: when SignPath Foundation (free for open-source) is wired
+# up (see docs/signing.md), the sign-and-publish job submits the built
+# installer for Authenticode signing and attaches the SIGNED .exe to the
+# release. The job is gated on the SIGNING_ENABLED repo variable; when it
+# is not set (or the SignPath secrets are missing), the workflow still
+# publishes the UNSIGNED installer so releases never break.
 
 on:
   push:
@@ -23,6 +25,9 @@ jobs:
   build-installer:
     runs-on: windows-latest
     timeout-minutes: 30
+
+    outputs:
+      artifact-id: ${{ steps.upload-unsigned.outputs.artifact-id }}
 
     steps:
       - uses: actions/checkout@v7
@@ -68,7 +73,62 @@ jobs:
         shell: pwsh
         run: Get-ChildItem release\
 
-      - name: Upload to GitHub Release
+      - name: Upload unsigned installer as build artifact
+        id: upload-unsigned
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-unsigned
+          path: release/Soyle-Setup-*.exe
+          if-no-files-found: error
+          retention-days: 14
+
+  sign-and-publish:
+    needs: build-installer
+    if: ${{ vars.SIGNING_ENABLED == 'true' }}
+    runs-on: windows-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      id-token: write   # required by SignPath OIDC workflow identity check
+      actions: read
+
+    steps:
+      - name: Submit to SignPath for Authenticode signing
+        id: signpath
+        uses: signpath/github-action-submit-signing-request@v1
+        with:
+          api-token:              ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id:        ${{ secrets.SIGNPATH_ORG_ID }}
+          project-slug:           ${{ secrets.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug:    ${{ secrets.SIGNPATH_SIGNING_POLICY_SLUG }}
+          github-artifact-id:     ${{ needs.build-installer.outputs.artifact-id }}
+          wait-for-completion:    true
+          output-artifact-directory: release-signed
+
+      - name: Attach signed installer to the GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          files: release-signed/Soyle-Setup-*.exe
+          fail_on_unmatched_files: true
+          generate_release_notes: true
+          draft: false
+
+  publish-unsigned:
+    needs: build-installer
+    if: ${{ vars.SIGNING_ENABLED != 'true' }}
+    runs-on: windows-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download unsigned installer
+        uses: actions/download-artifact@v4
+        with:
+          name: installer-unsigned
+          path: release
+
+      - name: Attach unsigned installer to the GitHub Release
         uses: softprops/action-gh-release@v3
         with:
           files: release/Soyle-Setup-*.exe
