@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Planned
+
+- OpenRouter login via OAuth 2.0 PKCE — no more manual API key copy-paste.
+- UI localization scaffold (Kazakh / Russian / English).
+- Cross-device sync via Google Drive AppDataFolder.
+
+## [1.1.0] — 2026-07-10
+
 ### Added
 
 - Whisper language selector in Settings → Whisper (Auto / Қазақша / Русский /
@@ -18,12 +26,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   language alongside Russian and English. Both prompts have an explicit
   KZ+RU+EN code-switching rule, KZ-specific filler-word list, and three
   draft Kazakh examples to anchor model behavior.
-
-### Planned
-
-- OpenRouter login via OAuth 2.0 PKCE — no more manual API key copy-paste.
-- UI localization scaffold (Kazakh / Russian / English).
-- Cross-device sync via Google Drive AppDataFolder.
+- Kazakh + Russian + English UI localization (settings language switcher,
+  restart to apply).
+- Dictation history: per-entry raw + polished text, persisted locally,
+  toggleable in Settings.
+- Redesigned HUD + floating button with design-token theming (light/dark).
+- Cloud sync (Phase 1–2) via Google Drive AppDataFolder: config + usage,
+  cross-device LWW merge, OAuth 2.0 PKCE.
 
 ## [1.0.0] — 2026-04-XX
 
