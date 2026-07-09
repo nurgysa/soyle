@@ -10,8 +10,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Planned
 
 - OpenRouter login via OAuth 2.0 PKCE — no more manual API key copy-paste.
-- UI localization scaffold (Kazakh / Russian / English).
-- Cross-device sync via Google Drive AppDataFolder.
 
 ## [1.1.0] — 2026-07-10
 
@@ -34,7 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Cloud sync (Phase 1–2) via Google Drive AppDataFolder: config + usage,
   cross-device LWW merge, OAuth 2.0 PKCE.
 
-## [1.0.0] — 2026-04-XX
+## [1.0.0] — 2026-04-28
 
 First public release of Söyle (formerly **WhisperFlow** during private development).
 
@@ -81,5 +79,6 @@ First public release of Söyle (formerly **WhisperFlow** during private developm
   first download. SignPath Foundation application is in flight; future
   releases will be signed automatically.
 
-[Unreleased]: https://github.com/nurgysa/soyle/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/nurgysa/soyle/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/nurgysa/soyle/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/nurgysa/soyle/releases/tag/v1.0.0
