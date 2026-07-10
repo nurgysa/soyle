@@ -131,3 +131,27 @@ def test_search_filters_list(qtbot, tmp_path: Path) -> None:
     win._search.setText("первый")
     assert win._list.count() == 1
     assert "первый processed" in win._detail_processed.text()
+
+
+def test_clear_works_when_filter_hides_all_rows(
+    qtbot, tmp_path: Path, monkeypatch,
+) -> None:
+    """Очистить wipes the whole store even when an active search filters the
+    visible list down to zero rows (guard must check the store, not the view)."""
+    from PySide6.QtWidgets import QMessageBox
+
+    store = _seed(tmp_path)
+    win = HistoryWindow(store, on_inject=lambda _t: None)
+    qtbot.addWidget(win)
+    win.show()
+
+    win._search.setText("zzz-matches-nothing")
+    assert win._list.count() == 0  # nothing visible…
+    assert len(store.all()) == 2   # …but the store still has entries
+
+    monkeypatch.setattr(
+        QMessageBox, "question",
+        lambda *a, **k: QMessageBox.StandardButton.Yes,
+    )
+    win._btn_clear.click()
+    assert store.all() == []

@@ -223,7 +223,10 @@ class HistoryWindow(QWidget):
             self._populate()
 
     def _on_clear(self) -> None:
-        if self._list.count() == 0:
+        # Guard on the store, not the visible list: an active search can hide
+        # every row (_list.count() == 0) while history still exists, and the
+        # user must still be able to clear it without first removing the filter.
+        if not self._store.all():
             return
         confirm = QMessageBox.question(
             self,
