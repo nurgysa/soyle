@@ -70,9 +70,9 @@ delete `%APPDATA%\Soyle` manually.
 - Classic Windows Notepad (the legacy Win32 edit control) sometimes
   ignores synthetic `Ctrl+V`. Works fine in browsers, IDEs, Word,
   Telegram, Claude, etc.
-- Whisper's `large-v3-turbo` model on GPUs without tensor cores
-  (GTX 16-series) can hang; default is `small` with `int8_float16`
-  on CUDA, `int8` on CPU.
+- The default `large-v3-turbo` model can hang on GPUs without tensor
+  cores (GTX 16-series); switch to `small` in **Settings → Whisper**
+  on such hardware.
 
 ---
 

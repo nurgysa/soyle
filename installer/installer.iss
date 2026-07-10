@@ -98,7 +98,7 @@ RestartApplications=no
 
 ; The signing configuration is intentionally omitted until an Authenticode
 ; cert is in place. Without it Windows SmartScreen will warn on first
-; install — users can click "More info → Run anyway". See docs/release.md.
+; install — users can click "More info → Run anyway". See docs/signing.md.
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
