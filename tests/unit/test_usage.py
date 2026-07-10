@@ -120,20 +120,24 @@ def test_record_does_not_touch_other_devices_bucket(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """An existing 'dev-B' entry on disk survives when 'dev-A' records."""
+    # Use today's real date so the entry stays inside the _trim_old() retention
+    # window. A hard-coded past date rots: once real "now" drifts more than
+    # _RETENTION_DAYS past it, record()'s trim-on-save prunes the seeded day and
+    # the assertions KeyError. _today_key() and _trim_old() share one clock
+    # (real now), so a fake for one without the other is inconsistent.
+    today = _today()
     seed = {
-        "2026-05-22": {"dev-B": {"cost_usd": 0.05, "requests": 3}},
+        today: {"dev-B": {"cost_usd": 0.05, "requests": 3}},
     }
     (tmp_path / "usage.json").write_text(json.dumps(seed), encoding="utf-8")
     _stub_device_id(monkeypatch, "dev-A")
-    from soyle.core import usage as u
-    monkeypatch.setattr(u.UsageTracker, "_today_key", staticmethod(lambda: "2026-05-22"))
 
     tracker = UsageTracker(tmp_path / "usage.json")
     tracker.record(0.01)
 
     raw = json.loads((tmp_path / "usage.json").read_text(encoding="utf-8"))
-    assert raw["2026-05-22"]["dev-B"] == {"cost_usd": 0.05, "requests": 3}
-    assert raw["2026-05-22"]["dev-A"] == {"cost_usd": 0.01, "requests": 1}
+    assert raw[today]["dev-B"] == {"cost_usd": 0.05, "requests": 3}
+    assert raw[today]["dev-A"] == {"cost_usd": 0.01, "requests": 1}
 
 
 def test_load_migrates_v1_flat_schema_to_v2_per_device(
