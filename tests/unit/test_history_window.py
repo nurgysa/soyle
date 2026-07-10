@@ -79,3 +79,55 @@ def test_empty_store_shows_no_rows(qtbot, tmp_path: Path) -> None:
     qtbot.addWidget(win)
     win.show()
     assert win._list.count() == 0
+
+
+class _FakeClipboard:
+    def __init__(self) -> None:
+        self.text = ""
+
+    def setText(self, text: str) -> None:  # noqa: N802 (Qt API shape)
+        self.text = text
+
+
+def test_inject_calls_back_with_processed_text(qtbot, tmp_path: Path) -> None:
+    store = _seed(tmp_path)
+    captured: list[str] = []
+    win = HistoryWindow(store, on_inject=captured.append)
+    qtbot.addWidget(win)
+    win.show()  # newest "второй" auto-selected
+
+    win._btn_inject.click()
+    assert captured == ["второй processed"]
+
+
+def test_copy_writes_processed_to_clipboard(qtbot, tmp_path: Path) -> None:
+    store = _seed(tmp_path)
+    clip = _FakeClipboard()
+    win = HistoryWindow(store, on_inject=lambda _t: None, clipboard=clip)
+    qtbot.addWidget(win)
+    win.show()
+
+    win._btn_copy.click()
+    assert clip.text == "второй processed"
+
+
+def test_delete_removes_selected_entry(qtbot, tmp_path: Path) -> None:
+    store = _seed(tmp_path)
+    win = HistoryWindow(store, on_inject=lambda _t: None)
+    qtbot.addWidget(win)
+    win.show()
+
+    win._btn_delete.click()  # deletes "второй"
+    assert win._list.count() == 1
+    assert [e.processed_text for e in store.all()] == ["первый processed"]
+
+
+def test_search_filters_list(qtbot, tmp_path: Path) -> None:
+    store = _seed(tmp_path)
+    win = HistoryWindow(store, on_inject=lambda _t: None)
+    qtbot.addWidget(win)
+    win.show()
+
+    win._search.setText("первый")
+    assert win._list.count() == 1
+    assert "первый processed" in win._detail_processed.text()
