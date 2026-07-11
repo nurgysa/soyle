@@ -14,6 +14,7 @@ class TrayIcon(QObject):
     settings_requested = Signal()
     logs_requested = Signal()
     quit_requested = Signal()
+    history_requested = Signal()
     mode_changed = Signal(str)  # one of "polish", "rewrite", "ai_prompt", "plain_text", "task"
 
     # Mode id → human label shown in the tray submenu and tooltip. Order is
@@ -58,12 +59,15 @@ class TrayIcon(QObject):
 
         menu.addSeparator()
 
+        self._act_history = QAction(self.tr("История…"), self)
+        self._act_history.triggered.connect(self.history_requested.emit)
         act_settings = QAction(self.tr("Настройки…"), self)
         act_settings.triggered.connect(self.settings_requested.emit)
         act_logs = QAction(self.tr("Показать логи"), self)
         act_logs.triggered.connect(self.logs_requested.emit)
         act_quit = QAction(self.tr("Выход"), self)
         act_quit.triggered.connect(self.quit_requested.emit)
+        menu.addAction(self._act_history)
         menu.addAction(act_settings)
         menu.addAction(act_logs)
         menu.addSeparator()

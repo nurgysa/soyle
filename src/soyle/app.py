@@ -39,6 +39,7 @@ from soyle.platform.autostart import (
 from soyle.platform.single_instance import SingleInstance
 from soyle.ui.async_runnable import AsyncRunnable
 from soyle.ui.floating_button import FloatingButton
+from soyle.ui.history_window import HistoryWindow
 from soyle.ui.indicator import Indicator
 from soyle.ui.resources import prompt_path
 from soyle.ui.settings import SettingsWindow
@@ -156,6 +157,10 @@ class SoyleApp(QObject):
         self._level_timer.setInterval(40)
         self._level_timer.timeout.connect(self._poll_mic_level)
         self._settings_window: SettingsWindow | None = None
+        self._history_window: HistoryWindow | None = None
+        # Foreground window captured when the history window opens — re-inject
+        # targets this, not the history window itself.
+        self._history_target_hwnd = 0
 
         self._recorder = Recorder(bus=self._bus)
         self._injector = Injector(bus=self._bus, method=self._cfg.behavior.inject_method)
@@ -329,6 +334,7 @@ class SoyleApp(QObject):
 
     def _wire_tray(self) -> None:
         self._tray.settings_requested.connect(self._show_settings)
+        self._tray.history_requested.connect(self._show_history)
         self._tray.logs_requested.connect(self._open_logs)
         self._tray.quit_requested.connect(self.quit)
         self._tray.mode_changed.connect(self._on_mode_changed)
@@ -607,6 +613,35 @@ class SoyleApp(QObject):
         self._settings_window.show()
         self._settings_window.raise_()
         self._settings_window.activateWindow()
+
+    def _show_history(self) -> None:
+        # Capture the foreground window BEFORE the history window steals focus —
+        # re-inject puts text back into the document the user was in.
+        self._history_target_hwnd = self._injector.capture_target()
+        if self._history_window is None:
+            self._history_window = HistoryWindow(
+                self._history_store,
+                on_inject=self._reinject_from_history,
+            )
+        self._history_window.show()
+        self._history_window.raise_()
+        self._history_window.activateWindow()
+
+    def _reinject_from_history(self, text: str) -> None:
+        # Hide first so focus returns to the captured window, then inject there.
+        if self._history_window is not None:
+            self._history_window.hide()
+        result = self._injector.inject(text, target_hwnd=self._history_target_hwnd)
+        if result.blocked:
+            self._tray.toast(
+                self.tr("Söyle"),
+                self.tr("Терминал: текст в буфере — вставьте вручную (Ctrl+V)"),
+            )
+        elif result.target_changed:
+            self._tray.toast(
+                self.tr("Söyle"),
+                self.tr("Текст скопирован — окно изменилось, вставьте вручную (Ctrl+V)"),
+            )
 
     def _show_first_run_wizard(self) -> None:
         self._show_settings()
